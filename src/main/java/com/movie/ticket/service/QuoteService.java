@@ -51,7 +51,8 @@ public class QuoteService {
         MovieTicketInfo ticketInfo = upstreamClient.recognizeTicket(uploadedImage.imageUrl());
 //        log.info(ticketInfo.movieName());
         UpstreamQuote upstreamQuote = upstreamClient.quote(ticketInfo);
-        BigDecimal finalPrice = pricingService.calculateFinalPrice(upstreamQuote.price());
+        BigDecimal maxPrice = parsePrice(ticketInfo.maxPrice(), "invalid max price from OCR");
+        BigDecimal finalPrice = pricingService.calculateFinalPrice(upstreamQuote.price(), maxPrice);
 
         TicketQuote quote = new TicketQuote();
         quote.setQuoteNo(newQuoteNo());
@@ -141,6 +142,14 @@ public class QuoteService {
     private String newQuoteNo() {
         return "Q" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(java.time.LocalDateTime.now())
                 + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+    }
+
+    private BigDecimal parsePrice(String value, String message) {
+        try {
+            return new BigDecimal(value);
+        } catch (NumberFormatException exception) {
+            throw new BusinessException(message);
+        }
     }
 
     private String toJson(Object value) {

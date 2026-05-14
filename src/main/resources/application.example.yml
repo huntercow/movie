@@ -39,5 +39,3 @@ ticket:
     user-token: ""
   pricing:
     markup-rate: 0.10
-    fixed-markup: 3.00
-    min-profit: 5.00

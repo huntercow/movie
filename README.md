@@ -173,6 +173,32 @@ ticket:
 
 建议使用环境变量或外部配置注入账号、密码、OSS 密钥，不要提交到 Git。
 
+### 报价利润
+
+最终报价不会超过 OCR 识别到的单张最高票面价 `maxPrice`。当前公式：
+
+```text
+如果 upstreamPrice > maxPrice：报价失败
+可用利润空间 = maxPrice - upstreamPrice
+利润 = 可用利润空间 × markup-rate
+finalPrice = upstreamPrice + 利润
+```
+
+例如：
+
+```yaml
+ticket:
+  pricing:
+    markup-rate: 0.10
+```
+
+`upstreamPrice=27.66`，`maxPrice=33.00`：
+
+```text
+利润 = (33.00 - 27.66) × 0.10 = 0.534
+finalPrice = 27.66 + 0.534 = 28.19
+```
+
 ## 运行
 
 ```bash

@@ -6,8 +6,6 @@ import java.math.BigDecimal;
 
 @ConfigurationProperties(prefix = "ticket.pricing")
 public record PricingProperties(
-        BigDecimal markupRate,
-        BigDecimal fixedMarkup,
-        BigDecimal minProfit
+        BigDecimal markupRate
 ) {
 }
