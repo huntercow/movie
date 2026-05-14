@@ -7,6 +7,7 @@ public record OrderResponse(
         String quoteNo,
         String customerId,
         BigDecimal finalPrice,
+        BigDecimal totalPrice,
         String status
 ) {
 }

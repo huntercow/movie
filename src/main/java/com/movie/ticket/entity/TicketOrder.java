@@ -25,6 +25,8 @@ public class TicketOrder {
     private String paymentNo;
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal finalPrice;
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal totalPrice;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private OrderStatus status;

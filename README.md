@@ -182,7 +182,8 @@ ticket:
 可用利润空间 = maxPrice - upstreamPrice
 期望利润 = 可用利润空间 × markup-rate + fixed-markup
 实际利润 = min(期望利润, 可用利润空间)
-finalPrice = upstreamPrice + 利润
+finalPrice = upstreamPrice + 实际利润
+totalPrice = finalPrice × ticketInfo.seatCount
 ```
 
 例如：
@@ -201,6 +202,12 @@ ticket:
 期望利润 = 5.34 × 0.10 + 1.00 = 1.534
 实际利润 = min(1.534, 5.34) = 1.534
 finalPrice = 27.66 + 1.534 = 29.19
+```
+
+如果识别到 2 张票：
+
+```text
+totalPrice = 29.19 × 2 = 58.38
 ```
 
 ## 运行

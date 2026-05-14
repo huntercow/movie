@@ -58,6 +58,9 @@ public class TicketQuote {
     private BigDecimal finalPrice;
 
     @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal totalPrice;
+
+    @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal profit;
 
     @Enumerated(EnumType.STRING)

@@ -41,6 +41,7 @@ public class OrderService {
         order.setCustomerId(request.customerId());
         order.setPaymentNo(request.paymentNo());
         order.setFinalPrice(quote.getFinalPrice());
+        order.setTotalPrice(quote.getTotalPrice());
         order.setStatus(OrderStatus.CREATED);
         orderRepository.save(order);
 
@@ -61,6 +62,7 @@ public class OrderService {
                 order.getQuoteNo(),
                 order.getCustomerId(),
                 order.getFinalPrice(),
+                order.getTotalPrice(),
                 order.getStatus().name()
         );
     }

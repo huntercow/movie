@@ -7,6 +7,7 @@ public record QuoteResponse(
         MovieTicketInfo ticketInfo,
         BigDecimal upstreamPrice,
         BigDecimal finalPrice,
+        BigDecimal totalPrice,
         BigDecimal profit,
         String status
 ) {

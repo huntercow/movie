@@ -53,6 +53,7 @@ public class QuoteService {
         UpstreamQuote upstreamQuote = upstreamClient.quote(ticketInfo);
         BigDecimal maxPrice = parsePrice(ticketInfo.maxPrice(), "invalid max price from OCR");
         BigDecimal finalPrice = pricingService.calculateFinalPrice(upstreamQuote.price(), maxPrice);
+        BigDecimal totalPrice = finalPrice.multiply(BigDecimal.valueOf(ticketCount(ticketInfo.seatCount())));
 
         TicketQuote quote = new TicketQuote();
         quote.setQuoteNo(newQuoteNo());
@@ -84,6 +85,7 @@ public class QuoteService {
         quote.setTotalImagePrice(ticketInfo.totalImagePrice());
         quote.setUpstreamPrice(upstreamQuote.price());
         quote.setFinalPrice(finalPrice);
+        quote.setTotalPrice(totalPrice);
         quote.setProfit(finalPrice.subtract(upstreamQuote.price()));
         quote.setStatus(QuoteStatus.CREATED);
         quote.setUpstreamRawResponse(upstreamQuote.rawResponse());
@@ -134,6 +136,7 @@ public class QuoteService {
                 ticketInfo,
                 quote.getUpstreamPrice(),
                 quote.getFinalPrice(),
+                quote.getTotalPrice(),
                 quote.getProfit(),
                 quote.getStatus().name()
         );
@@ -150,6 +153,10 @@ public class QuoteService {
         } catch (NumberFormatException exception) {
             throw new BusinessException(message);
         }
+    }
+
+    private int ticketCount(Integer seatCount) {
+        return seatCount == null || seatCount <= 0 ? 1 : seatCount;
     }
 
     private String toJson(Object value) {
