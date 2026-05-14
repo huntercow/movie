@@ -79,6 +79,30 @@
 
 登录成功后，`user-token` 会保存到 Redis，后续 OCR 和报价自动使用。
 
+登录接口会结构化返回票达人用户资料：
+
+```json
+{
+  "loggedIn": true,
+  "userToken": "token",
+  "profile": {
+    "id": "1475639100836352000",
+    "userName": "19934419145",
+    "enable": 1,
+    "regTime": "1771861377543",
+    "openId": "openid",
+    "headImg": "头像地址",
+    "nickname": "Hunter.",
+    "userBusinesses": [
+      {
+        "businessType": "Film"
+      }
+    ]
+  },
+  "raw": {}
+}
+```
+
 ## 配置
 
 真实配置文件 `src/main/resources/application.yml` 不提交到 Git。首次运行可以复制模板：

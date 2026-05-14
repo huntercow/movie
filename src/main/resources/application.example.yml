@@ -16,6 +16,7 @@ spring:
       password:
       database: 0
   jpa:
+    database-platform: org.hibernate.dialect.MySQLDialect
     hibernate:
       ddl-auto: update
     open-in-view: false
