@@ -53,7 +53,9 @@ public class QuoteService {
         UpstreamQuote upstreamQuote = upstreamClient.quote(ticketInfo);
         BigDecimal maxPrice = parsePrice(ticketInfo.maxPrice(), "invalid max price from OCR");
         BigDecimal finalPrice = pricingService.calculateFinalPrice(upstreamQuote.price(), maxPrice);
-        BigDecimal totalPrice = finalPrice.multiply(BigDecimal.valueOf(ticketCount(ticketInfo.seatCount())));
+        int ticketCount = ticketCount(ticketInfo.seatCount());
+        BigDecimal totalPrice = finalPrice.multiply(BigDecimal.valueOf(ticketCount));
+        BigDecimal totalProfit = finalPrice.subtract(upstreamQuote.price()).multiply(BigDecimal.valueOf(ticketCount));
 
         TicketQuote quote = new TicketQuote();
         quote.setQuoteNo(newQuoteNo());
@@ -86,7 +88,7 @@ public class QuoteService {
         quote.setUpstreamPrice(upstreamQuote.price());
         quote.setFinalPrice(finalPrice);
         quote.setTotalPrice(totalPrice);
-        quote.setProfit(finalPrice.subtract(upstreamQuote.price()));
+        quote.setProfit(totalProfit);
         quote.setStatus(QuoteStatus.CREATED);
         quote.setUpstreamRawResponse(upstreamQuote.rawResponse());
         quoteRepository.save(quote);

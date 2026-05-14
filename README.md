@@ -184,6 +184,7 @@ ticket:
 实际利润 = min(期望利润, 可用利润空间)
 finalPrice = upstreamPrice + 实际利润
 totalPrice = finalPrice × ticketInfo.seatCount
+profit = 实际利润 × ticketInfo.seatCount
 ```
 
 例如：
@@ -208,6 +209,7 @@ finalPrice = 27.66 + 1.534 = 29.19
 
 ```text
 totalPrice = 29.19 × 2 = 58.38
+profit = 1.534 × 2 = 3.07
 ```
 
 ## 运行
