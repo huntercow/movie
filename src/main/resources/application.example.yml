@@ -1,0 +1,42 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ticket-backend
+  datasource:
+    url: jdbc:mysql://localhost:3306/movie_ticket?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: movie_ticket
+    password: change-me
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+ticket:
+  upstream:
+    mock-enabled: true
+    base-url: "http://business-api.liangpiao.net.cn"
+    ocr-path: "/film/identify/filmIdentify"
+    quote-path: "/film/order/officialQuotation"
+    oss-region: "oss-cn-beijing"
+    oss-bucket: "liangpiao-ticket-img"
+    oss-access-key-id: ""
+    oss-access-key-secret: ""
+    oss-upload-dir: "ticket-img"
+    user-name: ""
+    password: ""
+    user-type-enum: "Consume"
+    auto-login: false
+    user-token: ""
+  pricing:
+    markup-rate: 0.10
+    fixed-markup: 3.00
+    min-profit: 5.00

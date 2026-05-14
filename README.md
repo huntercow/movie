@@ -1,6 +1,35 @@
 # 电影票后端
 
-基于 Java 17 + Spring Boot 3 的电影票报价/下单后端。当前版本先完成接口骨架，默认使用 mock 上游，后续把票达人抓包接口参数填入 `PiaoDaRenClient` 即可切真实上游。
+基于 Java 17 + Spring Boot 3 的电影票报价/订单后端。当前已接入 MySQL、Redis、Swagger、阿里云 OSS 上传，以及票达人 OCR/官方报价流程。
+
+## 技术栈
+
+- Java 17
+- Spring Boot 3.3.5
+- Spring Web
+- Spring Data JPA
+- MySQL
+- Redis
+- Spring Validation
+- SpringDoc OpenAPI / Swagger
+- 阿里云 OSS SDK
+- Maven
+
+## 核心流程
+
+`POST /api/quotes` 会执行：
+
+```text
+图片 base64
+→ 上传到阿里云 OSS
+→ 调票达人 OCR：/film/identify/filmIdentify
+→ 调票达人报价 LIMIT_PRICE：/film/order/officialQuotation
+→ 调票达人报价 FIX_PRICE：/film/order/officialQuotation
+→ 选择两个报价中较大的一个
+→ 本地加价
+→ 保存报价单
+→ 返回最终报价
+```
 
 ## 接口
 
@@ -15,8 +44,6 @@
   "channel": "WECHAT"
 }
 ```
-
-流程：上传图片到上游 → OCR → 上游报价 → 本地加价 → 保存报价。
 
 ### 查询报价
 
@@ -50,7 +77,77 @@
 }
 ```
 
-登录成功后，后端会在内存中保存本次返回的 `user-token`，后续 OCR、报价会自动使用它。也可以在配置文件里开启自动登录。
+登录成功后，`user-token` 会保存到 Redis，后续 OCR 和报价自动使用。
+
+## 配置
+
+真实配置文件 `src/main/resources/application.yml` 不提交到 Git。首次运行可以复制模板：
+
+```bash
+cp src/main/resources/application.example.yml src/main/resources/application.yml
+```
+
+Windows PowerShell：
+
+```powershell
+Copy-Item src/main/resources/application.example.yml src/main/resources/application.yml
+```
+
+### MySQL
+
+先创建数据库和用户，例如：
+
+```sql
+CREATE DATABASE movie_ticket DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'movie_ticket'@'%' IDENTIFIED BY 'change-me';
+GRANT ALL PRIVILEGES ON movie_ticket.* TO 'movie_ticket'@'%';
+FLUSH PRIVILEGES;
+```
+
+然后修改 `application.yml`：
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/movie_ticket?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: movie_ticket
+    password: change-me
+```
+
+### Redis
+
+```yaml
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+```
+
+### 票达人与 OSS
+
+```yaml
+ticket:
+  upstream:
+    mock-enabled: false
+    base-url: "http://business-api.liangpiao.net.cn"
+    ocr-path: "/film/identify/filmIdentify"
+    quote-path: "/film/order/officialQuotation"
+    oss-region: "oss-cn-beijing"
+    oss-bucket: "liangpiao-ticket-img"
+    oss-access-key-id: "你的 OSS AccessKeyId"
+    oss-access-key-secret: "你的 OSS AccessKeySecret"
+    oss-upload-dir: "ticket-img"
+    user-name: "票达人账号"
+    password: "票达人密码"
+    user-type-enum: "Consume"
+    auto-login: true
+    user-token: ""
+```
+
+建议使用环境变量或外部配置注入账号、密码、OSS 密钥，不要提交到 Git。
 
 ## 运行
 
@@ -64,44 +161,9 @@ Swagger UI：`http://localhost:8080/swagger-ui/index.html`
 
 OpenAPI JSON：`http://localhost:8080/v3/api-docs`
 
-H2 控制台：`http://localhost:8080/h2-console`
+## 本地测试建议
 
-JDBC URL：`jdbc:h2:file:./data/ticket-backend;MODE=MySQL;DATABASE_TO_UPPER=false`
-
-## 切换真实票达人上游
-
-旧 Python 项目里的票达人路径已经迁移到 Java：
-
-- OCR：`/film/identify/filmIdentify`，表单字段 `imgUrl`
-- 官方报价：`/film/order/officialQuotation`，分别请求 `LIMIT_PRICE` 和 `FIX_PRICE`，选择报价较大的一个
-- 图片上传：使用阿里 OSS SDK 直传，路径 `ticket-img/{uuid}.jpg`
-
-把 `src/main/resources/application.yml` 中：
-
-```yaml
-ticket:
-  upstream:
-    mock-enabled: false
-    base-url: "http://business-api.liangpiao.net.cn"
-    ocr-path: "/真实OCR路径"
-    quote-path: "/真实报价路径"
-    oss-region: "oss-cn-beijing"
-    oss-bucket: "liangpiao-ticket-img"
-    oss-access-key-id: "你的 OSS AccessKeyId"
-    oss-access-key-secret: "你的 OSS AccessKeySecret"
-    oss-upload-dir: "ticket-img"
-    user-name: "票达人账号"
-    password: "票达人密码"
-    user-type-enum: "Consume"
-    auto-login: true
-    user-token: "可选，登录后会自动覆盖本次运行内存 token"
-```
-
-建议用环境变量或外部配置注入 OSS 密钥，不要提交到 Git。
-
-## 下一步建议
-
-- 把上传接口改成 `multipart/form-data`，避免前端直接传大 base64。
-- 增加管理员后台接口：订单列表、利润统计、手动改价、补单。
-- 增加微信用户表、返利规则表和渠道分佣表。
-- 上线前从 H2 切到 MySQL/PostgreSQL。
+1. 先用 `mock-enabled: true` 跑通报价和订单接口。
+2. 确认 MySQL、Redis 正常连接。
+3. 再切 `mock-enabled: false`，填入票达人账号和 OSS 配置。
+4. 使用 Swagger 测试 `POST /api/quotes`。

@@ -4,3 +4,4 @@ data/
 *.iml
 *.log
 *.yml
+!src/main/resources/application.example.yml
