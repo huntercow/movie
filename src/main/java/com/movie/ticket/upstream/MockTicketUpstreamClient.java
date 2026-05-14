@@ -22,15 +22,28 @@ public class MockTicketUpstreamClient implements TicketUpstreamClient {
     @Override
     public MovieTicketInfo recognizeTicket(String imageUrl) {
         return new MovieTicketInfo(
+                "mock-task-id",
+                "四川省",
+                "成都市",
+                "郫都区",
+                "510100",
+                "mock-cinema-id",
+                "mock-cinema-code",
+                "测试地址",
+                "mock-film-id",
+                "https://mock.piaodaren.local/film.jpg",
+                1,
                 "mock-show-id",
                 "测试电影",
                 "测试影城",
                 LocalDateTime.now().plusDays(1).withSecond(0).withNano(0),
                 "1号厅",
+                "国语 2D",
                 2,
                 List.of("5排6座", "5排7座"),
                 Map.of("5排6座", "66.00", "5排7座", "66.00"),
                 "66.00",
+                "132.00",
                 imageUrl,
                 "mock ocr text from " + imageUrl
         );

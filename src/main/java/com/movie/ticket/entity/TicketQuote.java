@@ -25,15 +25,29 @@ public class TicketQuote {
 
     private String imageUrl;
     private String upstreamImageId;
+    private String ocrTaskId;
+    private String provinceName;
+    private String cityName;
+    private String areaName;
+    private String cityCode;
+    private String cinemaId;
+    private String cinemaCode;
+    private String cinemaAddress;
+    private String filmId;
+    @Column(length = 512)
+    private String filmImg;
+    private Integer customFilmType;
     private String showId;
     private String movieName;
     private String cinemaName;
     private LocalDateTime showTime;
     private String hallName;
+    private String planType;
     private Integer seatCount;
     @Column(length = 1024)
     private String seatsJson;
     private String maxPrice;
+    private String totalImagePrice;
 
     @Column(length = 2048)
     private String rawOcrText;

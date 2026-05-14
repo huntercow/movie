@@ -80,21 +80,36 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
     public MovieTicketInfo recognizeTicket(String imageUrl) {
         String encodedImageUrl = URLEncoder.encode(imageUrl, StandardCharsets.UTF_8);
         Map<?, ?> response = postForm(properties.ocrPath(), "imgUrl=" + encodedImageUrl);
-        Map<?, ?> discern = extractDataMap(response);
+        Map<?, ?> data = extractDataMap(response);
+        Map<?, ?> discern = extractDiscernMap(data);
         List<String> seats = extractSeatNames(discern.get("seats"));
         Map<String, String> seatsAndPrice = extractSeatsAndPrice(discern.get("seats"));
         BigDecimal maxPrice = extractMaxSeatPrice(discern.get("seats"));
 
+
         return new MovieTicketInfo(
+                stringValue(data.get("taskId")),
+                stringValue(discern.get("province")),
+                stringValue(discern.get("city")),
+                stringValue(discern.get("area")),
+                stringValue(discern.get("cityCode")),
+                stringValue(discern.get("cinemaId")),
+                stringValue(discern.get("cinemaCode")),
+                stringValue(discern.get("cinemaAddress")),
+                stringValue(discern.get("filmId")),
+                stringValue(discern.get("filmImg")),
+                intValue(discern.get("customFilmType")),
                 stringValue(discern.get("showId")),
                 stringValue(discern.get("filmName")),
                 stringValue(discern.get("cinemaName")),
                 parseShowTime(discern.get("showTime")),
                 stringValue(discern.get("hallName")),
+                stringValue(discern.get("planType")),
                 seats.isEmpty() ? null : seats.size(),
                 seats,
                 seatsAndPrice,
                 maxPrice == null ? null : maxPrice.toPlainString(),
+                centsToYuanText(discern.get("totalImagePrice")),
                 imageUrl,
                 response.toString()
         );
@@ -198,11 +213,11 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         if (response == null) {
             throw new BusinessException("empty upstream response");
         }
-        Object state = response.get("state");
-        Object result = response.get("result");
-        if (state != null && !"200".equals(String.valueOf(state))) {
+        String state = stringValue(response.get("state"));
+        if (!"200".equals(state)) {
             throw new BusinessException("upstream error: " + messageFrom(response));
         }
+        Object result = response.get("result");
         if (result != null && !Boolean.parseBoolean(String.valueOf(result))) {
             throw new BusinessException("upstream failed: " + messageFrom(response));
         }
@@ -211,6 +226,14 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
             return dataMap;
         }
         throw new BusinessException("upstream response missing data");
+    }
+
+    private Map<?, ?> extractDiscernMap(Map<?, ?> data) {
+        Object discern = data.get("discern");
+        if (discern instanceof Map<?, ?> discernMap) {
+            return discernMap;
+        }
+        throw new BusinessException("OCR response missing discern");
     }
 
     private List<String> extractSeatNames(Object seatsValue) {
@@ -282,6 +305,11 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         return new BigDecimal(String.valueOf(cents)).divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
     }
 
+    private String centsToYuanText(Object cents) {
+        BigDecimal yuan = centsToYuan(cents);
+        return yuan == null ? null : yuan.toPlainString();
+    }
+
     private String stripBase64Prefix(String imageBase64) {
         int commaIndex = imageBase64.indexOf(',');
         return commaIndex >= 0 ? imageBase64.substring(commaIndex + 1) : imageBase64;
@@ -300,6 +328,17 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
 
     private String stringValue(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    private Integer intValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(String.valueOf(value));
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private String messageFrom(Map<?, ?> response) {
