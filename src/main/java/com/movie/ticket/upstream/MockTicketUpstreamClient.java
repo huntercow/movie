@@ -44,8 +44,7 @@ public class MockTicketUpstreamClient implements TicketUpstreamClient {
                 Map.of("5排6座", "66.00", "5排7座", "66.00"),
                 "66.00",
                 "132.00",
-                imageUrl,
-                "mock ocr text from " + imageUrl
+                imageUrl
         );
     }
 

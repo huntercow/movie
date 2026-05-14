@@ -49,9 +49,6 @@ public class TicketQuote {
     private String maxPrice;
     private String totalImagePrice;
 
-    @Column(length = 2048)
-    private String rawOcrText;
-
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal upstreamPrice;
 

@@ -27,7 +27,6 @@ public record MovieTicketInfo(
         Map<String, String> seatsAndPrice,
         String maxPrice,
         String totalImagePrice,
-        String imageUrl,
-        String rawText
+        String imageUrl
 ) {
 }

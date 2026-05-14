@@ -80,15 +80,15 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
     public MovieTicketInfo recognizeTicket(String imageUrl) {
         String encodedImageUrl = URLEncoder.encode(imageUrl, StandardCharsets.UTF_8);
         Map<?, ?> response = postForm(properties.ocrPath(), "imgUrl=" + encodedImageUrl);
-        Map<?, ?> data = extractDataMap(response);
-        Map<?, ?> discern = extractDiscernMap(data);
+        Map<?, ?> ocrData = extractDataMap(response);
+        Map<?, ?> discern = extractDiscernMap(ocrData);
         List<String> seats = extractSeatNames(discern.get("seats"));
         Map<String, String> seatsAndPrice = extractSeatsAndPrice(discern.get("seats"));
         BigDecimal maxPrice = extractMaxSeatPrice(discern.get("seats"));
 
 
         return new MovieTicketInfo(
-                stringValue(data.get("taskId")),
+                stringValue(ocrData.get("taskId")),
                 stringValue(discern.get("province")),
                 stringValue(discern.get("city")),
                 stringValue(discern.get("area")),
@@ -110,8 +110,7 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
                 seatsAndPrice,
                 maxPrice == null ? null : maxPrice.toPlainString(),
                 centsToYuanText(discern.get("totalImagePrice")),
-                imageUrl,
-                response.toString()
+                defaultText(stringValue(ocrData.get("imageUrl")), imageUrl)
         );
     }
 

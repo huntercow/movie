@@ -36,9 +36,9 @@ public class QuoteService {
     @Transactional
     public QuoteResponse createQuote(CreateQuoteRequest request) {
         UploadedImage uploadedImage = upstreamClient.uploadImage(request.imageBase64());
-        log.info(uploadedImage.imageUrl());
+//        log.info(uploadedImage.imageUrl());
         MovieTicketInfo ticketInfo = upstreamClient.recognizeTicket(uploadedImage.imageUrl());
-        log.info(ticketInfo.movieName());
+//        log.info(ticketInfo.movieName());
         UpstreamQuote upstreamQuote = upstreamClient.quote(ticketInfo);
         BigDecimal finalPrice = pricingService.calculateFinalPrice(upstreamQuote.price());
 
@@ -69,7 +69,6 @@ public class QuoteService {
         quote.setSeatsJson(toSimpleJsonArray(ticketInfo.seats()));
         quote.setMaxPrice(ticketInfo.maxPrice());
         quote.setTotalImagePrice(ticketInfo.totalImagePrice());
-        quote.setRawOcrText(ticketInfo.rawText());
         quote.setUpstreamPrice(upstreamQuote.price());
         quote.setFinalPrice(finalPrice);
         quote.setProfit(finalPrice.subtract(upstreamQuote.price()));
@@ -115,8 +114,7 @@ public class QuoteService {
                 null,
                 quote.getMaxPrice(),
                 quote.getTotalImagePrice(),
-                quote.getImageUrl(),
-                quote.getRawOcrText()
+                quote.getImageUrl()
         );
         return new QuoteResponse(
                 quote.getQuoteNo(),
