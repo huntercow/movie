@@ -73,26 +73,35 @@ public class PiaoDaRenAuthService {
                 ))
                 .retrieve()
                 .body(Map.class);
+
         if (response == null) {
             throw new BusinessException("empty login response");
         }
-        String token = response.get("token") == null ? null : String.valueOf(response.get("token"));
+
+        String state = stringValue(response.get("state"));
+        String message = stringValue(response.get("message"));
+        if (!"200".equals(state)) {
+            throw new BusinessException("login failed: " + message);
+        }
+
+        String token = stringValue(response.get("token"));
         if (!StringUtils.hasText(token)) {
             Object data = response.get("data");
-            if (data instanceof Map<?, ?> dataMap && dataMap.get("token") != null) {
-                token = String.valueOf(dataMap.get("token"));
+            if (data instanceof Map<?, ?> dataMap) {
+                token = stringValue(dataMap.get("token"));
             }
         }
         if (!StringUtils.hasText(token)) {
-            throw new BusinessException("login succeeded but token missing: " + response);
+            throw new BusinessException("login succeeded but token missing");
         }
+
         PiaoDaRenUserProfile profile = parseProfile(response);
         session.setUserToken(token);
         if (profile != null) {
             session.setUserProfile(profile.id(), profile.userName(), profile.nickname(), profile.headImg());
             saveAccount(profile, token, response);
         }
-        return new PiaoDaRenLoginResponse(true, token, profile, response);
+        return new PiaoDaRenLoginResponse(true, token, profile);
     }
 
     private void saveAccount(PiaoDaRenUserProfile profile, String token, Map<?, ?> response) {

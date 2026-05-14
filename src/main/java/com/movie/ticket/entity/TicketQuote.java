@@ -46,6 +46,8 @@ public class TicketQuote {
     private Integer seatCount;
     @Column(length = 1024)
     private String seatsJson;
+    @Column(length = 2048)
+    private String seatsAndPriceJson;
     private String maxPrice;
     private String totalImagePrice;
 

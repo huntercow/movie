@@ -1,5 +1,8 @@
 package com.movie.ticket.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.movie.ticket.dto.CreateQuoteRequest;
 import com.movie.ticket.dto.MovieTicketInfo;
 import com.movie.ticket.dto.QuoteResponse;
@@ -16,7 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.format.DateTimeFormatter;
-import java.util.StringJoiner;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -26,11 +30,18 @@ public class QuoteService {
     private final TicketUpstreamClient upstreamClient;
     private final PricingService pricingService;
     private final TicketQuoteRepository quoteRepository;
+    private final ObjectMapper objectMapper;
 
-    public QuoteService(TicketUpstreamClient upstreamClient, PricingService pricingService, TicketQuoteRepository quoteRepository) {
+    public QuoteService(
+            TicketUpstreamClient upstreamClient,
+            PricingService pricingService,
+            TicketQuoteRepository quoteRepository,
+            ObjectMapper objectMapper
+    ) {
         this.upstreamClient = upstreamClient;
         this.pricingService = pricingService;
         this.quoteRepository = quoteRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -66,7 +77,8 @@ public class QuoteService {
         quote.setHallName(ticketInfo.hallName());
         quote.setPlanType(ticketInfo.planType());
         quote.setSeatCount(ticketInfo.seatCount());
-        quote.setSeatsJson(toSimpleJsonArray(ticketInfo.seats()));
+        quote.setSeatsJson(toJson(ticketInfo.seats()));
+        quote.setSeatsAndPriceJson(toJson(ticketInfo.seatsAndPrice()));
         quote.setMaxPrice(ticketInfo.maxPrice());
         quote.setTotalImagePrice(ticketInfo.totalImagePrice());
         quote.setUpstreamPrice(upstreamQuote.price());
@@ -110,8 +122,8 @@ public class QuoteService {
                 quote.getHallName(),
                 quote.getPlanType(),
                 quote.getSeatCount(),
-                null,
-                null,
+                parseStringList(quote.getSeatsJson()),
+                parseStringMap(quote.getSeatsAndPriceJson()),
                 quote.getMaxPrice(),
                 quote.getTotalImagePrice(),
                 quote.getImageUrl()
@@ -131,14 +143,35 @@ public class QuoteService {
                 + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
     }
 
-    private String toSimpleJsonArray(java.util.List<String> values) {
-        if (values == null) {
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value == null ? List.of() : value);
+        } catch (JsonProcessingException exception) {
             return "[]";
         }
-        StringJoiner joiner = new StringJoiner(",", "[", "]");
-        for (String value : values) {
-            joiner.add("\"" + value.replace("\"", "\\\"") + "\"");
+    }
+
+    private List<String> parseStringList(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
         }
-        return joiner.toString();
+        try {
+            return objectMapper.readValue(json, new TypeReference<>() {
+            });
+        } catch (JsonProcessingException exception) {
+            return List.of();
+        }
+    }
+
+    private Map<String, String> parseStringMap(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<>() {
+            });
+        } catch (JsonProcessingException exception) {
+            return Map.of();
+        }
     }
 }
