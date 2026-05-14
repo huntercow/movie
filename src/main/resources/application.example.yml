@@ -39,3 +39,4 @@ ticket:
     user-token: ""
   pricing:
     markup-rate: 0.10
+    fixed-markup: 1.00

@@ -27,8 +27,10 @@ public class PricingService {
             throw new BusinessException("quote failed: upstream price is higher than max price");
         }
         BigDecimal markupRate = defaultValue(properties.markupRate(), BigDecimal.ZERO);
+        BigDecimal fixedMarkup = defaultValue(properties.fixedMarkup(), BigDecimal.ZERO);
         BigDecimal availableProfit = maxPrice.subtract(upstreamPrice);
-        BigDecimal profit = availableProfit.multiply(markupRate);
+        BigDecimal expectedProfit = availableProfit.multiply(markupRate).add(fixedMarkup);
+        BigDecimal profit = expectedProfit.min(availableProfit);
         return upstreamPrice.add(profit).setScale(2, RoundingMode.HALF_UP);
     }
 

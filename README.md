@@ -180,7 +180,8 @@ ticket:
 ```text
 如果 upstreamPrice > maxPrice：报价失败
 可用利润空间 = maxPrice - upstreamPrice
-利润 = 可用利润空间 × markup-rate
+期望利润 = 可用利润空间 × markup-rate + fixed-markup
+实际利润 = min(期望利润, 可用利润空间)
 finalPrice = upstreamPrice + 利润
 ```
 
@@ -190,13 +191,16 @@ finalPrice = upstreamPrice + 利润
 ticket:
   pricing:
     markup-rate: 0.10
+    fixed-markup: 1.00
 ```
 
 `upstreamPrice=27.66`，`maxPrice=33.00`：
 
 ```text
-利润 = (33.00 - 27.66) × 0.10 = 0.534
-finalPrice = 27.66 + 0.534 = 28.19
+可用利润空间 = 33.00 - 27.66 = 5.34
+期望利润 = 5.34 × 0.10 + 1.00 = 1.534
+实际利润 = min(1.534, 5.34) = 1.534
+finalPrice = 27.66 + 1.534 = 29.19
 ```
 
 ## 运行
