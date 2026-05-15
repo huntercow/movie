@@ -35,7 +35,12 @@ public class TicketOrder {
     private String upstreamSubmitRequest;
     @Lob
     private String upstreamSubmitResponse;
+    @Lob
+    private String upstreamPayRequest;
+    @Lob
+    private String upstreamPayResponse;
     private LocalDateTime submittedAt;
+    private LocalDateTime paidAt;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private OrderStatus status;

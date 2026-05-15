@@ -70,9 +70,10 @@
 
 ```text
 /film/order/officialSubmitOrder
+/film/order/payOrder
 ```
 
-成功后状态变为 `SUBMITTED`，并保存 `upstreamOrderNo`。失败后状态变为 `SUBMIT_FAILED`，并保存失败原因。
+提交成功后保存 `upstreamOrderNo`，随后自动支付。支付成功后状态变为 `PAID`。提交或支付失败后状态变为 `SUBMIT_FAILED`，并保存失败原因。
 
 ### 查询订单
 
@@ -247,4 +248,4 @@ OpenAPI JSON：`http://localhost:8080/v3/api-docs`
 2. 确认 MySQL、Redis 正常连接。
 3. 再切 `mock-enabled: false`，填入票达人账号和 OSS 配置。
 4. 使用 Swagger 测试 `POST /api/quotes`。
-5. 客户确认后调用 `POST /api/orders`，观察订单是否异步变成 `SUBMITTED`。
+5. 客户确认后调用 `POST /api/orders`，观察订单是否异步变成 `PAID`。

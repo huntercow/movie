@@ -164,6 +164,17 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         return new UpstreamSubmitOrderResult(orderNumber, body.toString(), response.toString());
     }
 
+    @Override
+    public UpstreamPayOrderResult payOrder(String orderNumber) {
+        if (!StringUtils.hasText(orderNumber)) {
+            throw new BusinessException("missing upstream order number");
+        }
+        String body = "orderNumber=" + URLEncoder.encode(orderNumber, StandardCharsets.UTF_8);
+        Map<?, ?> response = postForm("/film/order/payOrder", body);
+        extractDataMapAllowEmpty(response);
+        return new UpstreamPayOrderResult(orderNumber, body, response.toString());
+    }
+
     private OfficialQuoteResult requestOfficialQuote(MovieTicketInfo ticketInfo, String channel) {
         try {
             Map<String, Object> body = new HashMap<>();
@@ -278,6 +289,25 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
             return dataMap;
         }
         throw new BusinessException("upstream response missing data");
+    }
+
+    private Map<?, ?> extractDataMapAllowEmpty(Map<?, ?> response) {
+        if (response == null) {
+            throw new BusinessException("empty upstream response");
+        }
+        String state = stringValue(response.get("state"));
+        if (!"200".equals(state)) {
+            throw new BusinessException("upstream error: " + messageFrom(response));
+        }
+        Object result = response.get("result");
+        if (result != null && !Boolean.parseBoolean(String.valueOf(result))) {
+            throw new BusinessException("upstream failed: " + messageFrom(response));
+        }
+        Object data = response.get("data");
+        if (data instanceof Map<?, ?> dataMap) {
+            return dataMap;
+        }
+        return Map.of();
     }
 
     private Map<?, ?> extractDiscernMap(Map<?, ?> data) {

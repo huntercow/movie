@@ -11,6 +11,7 @@ import com.movie.ticket.repository.TicketQuoteRepository;
 import com.movie.ticket.upstream.PiaoDaRenSession;
 import com.movie.ticket.upstream.SubmitOrderCommand;
 import com.movie.ticket.upstream.TicketUpstreamClient;
+import com.movie.ticket.upstream.UpstreamPayOrderResult;
 import com.movie.ticket.upstream.UpstreamSubmitOrderResult;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -72,7 +73,11 @@ public class OrderSubmitService {
             order.setUpstreamSubmitResponse(result.rawResponse());
             order.setLastSubmitError(null);
             order.setSubmittedAt(java.time.LocalDateTime.now());
-            order.setStatus(OrderStatus.SUBMITTED);
+            UpstreamPayOrderResult payResult = upstreamClient.payOrder(result.orderNumber());
+            order.setUpstreamPayRequest(payResult.rawRequest());
+            order.setUpstreamPayResponse(payResult.rawResponse());
+            order.setPaidAt(java.time.LocalDateTime.now());
+            order.setStatus(OrderStatus.PAID);
         } catch (Exception exception) {
             order.setLastSubmitError(exception.getMessage());
             order.setStatus(OrderStatus.SUBMIT_FAILED);

@@ -10,4 +10,6 @@ public interface TicketUpstreamClient {
     UpstreamQuote quote(MovieTicketInfo ticketInfo);
 
     UpstreamSubmitOrderResult submitOrder(SubmitOrderCommand command);
+
+    UpstreamPayOrderResult payOrder(String orderNumber);
 }
