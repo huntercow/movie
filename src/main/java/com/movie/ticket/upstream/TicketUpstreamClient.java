@@ -8,4 +8,6 @@ public interface TicketUpstreamClient {
     MovieTicketInfo recognizeTicket(String imageUrl);
 
     UpstreamQuote quote(MovieTicketInfo ticketInfo);
+
+    UpstreamSubmitOrderResult submitOrder(SubmitOrderCommand command);
 }

@@ -50,6 +50,11 @@ public class MockTicketUpstreamClient implements TicketUpstreamClient {
 
     @Override
     public UpstreamQuote quote(MovieTicketInfo ticketInfo) {
-        return new UpstreamQuote(new BigDecimal("66.00"), "{\"mock\":true}");
+        return new UpstreamQuote(new BigDecimal("66.00"), "mock-official-quotation-id", "LIMIT_PRICE", "{\"mock\":true}");
+    }
+
+    @Override
+    public UpstreamSubmitOrderResult submitOrder(SubmitOrderCommand command) {
+        return new UpstreamSubmitOrderResult("MOCK" + UUID.randomUUID(), command.toString(), "{\"mock\":true}");
     }
 }

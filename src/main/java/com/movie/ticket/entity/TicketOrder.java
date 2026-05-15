@@ -27,6 +27,15 @@ public class TicketOrder {
     private BigDecimal finalPrice;
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal totalPrice;
+    private String upstreamOrderNo;
+    private Integer submitRetryCount;
+    @Column(length = 1024)
+    private String lastSubmitError;
+    @Lob
+    private String upstreamSubmitRequest;
+    @Lob
+    private String upstreamSubmitResponse;
+    private LocalDateTime submittedAt;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private OrderStatus status;

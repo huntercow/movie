@@ -66,9 +66,21 @@
 }
 ```
 
+创建本地订单后会立即返回，并异步提交票达人上游订单。订单初始状态为 `WAIT_SUBMIT`，后台任务会调用：
+
+```text
+/film/order/officialSubmitOrder
+```
+
+成功后状态变为 `SUBMITTED`，并保存 `upstreamOrderNo`。失败后状态变为 `SUBMIT_FAILED`，并保存失败原因。
+
 ### 查询订单
 
 `GET /api/orders/{orderNo}`
+
+### 重试提交上游订单
+
+`POST /api/orders/{orderNo}/submit/retry`
 
 ### 登录票达人
 
@@ -235,3 +247,4 @@ OpenAPI JSON：`http://localhost:8080/v3/api-docs`
 2. 确认 MySQL、Redis 正常连接。
 3. 再切 `mock-enabled: false`，填入票达人账号和 OSS 配置。
 4. 使用 Swagger 测试 `POST /api/quotes`。
+5. 客户确认后调用 `POST /api/orders`，观察订单是否异步变成 `SUBMITTED`。

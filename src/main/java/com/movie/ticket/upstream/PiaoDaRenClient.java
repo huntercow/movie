@@ -127,7 +127,41 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
                 .filter(result -> result.price().compareTo(BigDecimal.ZERO) > 0)
                 .max(java.util.Comparator.comparing(OfficialQuoteResult::price))
                 .orElseThrow(() -> new BusinessException("missing valid price from upstream quotation"));
-        return new UpstreamQuote(selected.price(), results.toString());
+        return new UpstreamQuote(selected.price(), selected.taskId(), selected.channel(), results.toString());
+    }
+
+    @Override
+    public UpstreamSubmitOrderResult submitOrder(SubmitOrderCommand command) {
+        if (!StringUtils.hasText(command.officialQuotationId())) {
+            throw new BusinessException("missing official quotation id");
+        }
+        if (!StringUtils.hasText(command.showId())) {
+            throw new BusinessException("missing show id");
+        }
+        Map<String, Object> body = new HashMap<>();
+        body.put("userId", defaultText(command.userId(), ""));
+        body.put("userName", defaultText(command.userName(), ""));
+        body.put("showId", command.showId());
+        body.put("seats", Optional.ofNullable(command.seats()).orElse(List.of()).stream().map(this::parseSeatName).toList());
+        body.put("channel", 3);
+        body.put("orderType", 1);
+        body.put("changeSeat", 1);
+        body.put("inputLimitPrice", toCents(command.upstreamPrice()));
+        body.put("matchChannel", 1);
+        body.put("quotationMode", 1);
+        body.put("inquiryPrice", toCents(command.upstreamPrice()));
+        body.put("officialQuotationId", command.officialQuotationId());
+        body.put("officialChannel", 1);
+        body.put("OfficialQuotationChannel", List.of(officialQuotationChannelCode(command.officialQuotationChannel())));
+        body.put("officialChannelState", 1);
+
+        Map<?, ?> response = postJson("/film/order/officialSubmitOrder", body);
+        Map<?, ?> data = extractDataMap(response);
+        String orderNumber = stringValue(data.get("orderNumber"));
+        if (!StringUtils.hasText(orderNumber)) {
+            throw new BusinessException("missing upstream order number");
+        }
+        return new UpstreamSubmitOrderResult(orderNumber, body.toString(), response.toString());
     }
 
     private OfficialQuoteResult requestOfficialQuote(MovieTicketInfo ticketInfo, String channel) {
@@ -173,6 +207,25 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
             case "COMMERCE_PRICE" -> centsToYuan(data.get("commercePrice"));
             default -> BigDecimal.ZERO;
         };
+    }
+
+    private Map<String, Object> parseSeatName(String seatName) {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(\\d+)排(\\d+)座").matcher(defaultText(seatName, ""));
+        if (matcher.find()) {
+            return Map.of(
+                    "row", Integer.parseInt(matcher.group(1)),
+                    "col", Integer.parseInt(matcher.group(2)),
+                    "seatName", seatName
+            );
+        }
+        return Map.of("row", 1, "col", 1, "seatName", defaultText(seatName, ""));
+    }
+
+    private int officialQuotationChannelCode(String channel) {
+        if ("FIX_PRICE".equals(channel)) {
+            return 2;
+        }
+        return 1;
     }
 
     private BigDecimal defaultPrice(BigDecimal price) {
@@ -295,6 +348,13 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
             return "0";
         }
         return new BigDecimal(yuan).multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private int toCents(BigDecimal yuan) {
+        if (yuan == null) {
+            return 0;
+        }
+        return yuan.multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP).intValue();
     }
 
     private BigDecimal centsToYuan(Object cents) {

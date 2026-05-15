@@ -69,6 +69,8 @@ public class TicketQuote {
 
     @Column(length = 2048)
     private String upstreamRawResponse;
+    private String officialQuotationId;
+    private String officialQuotationChannel;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;

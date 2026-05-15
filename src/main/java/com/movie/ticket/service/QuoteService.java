@@ -91,6 +91,8 @@ public class QuoteService {
         quote.setProfit(totalProfit);
         quote.setStatus(QuoteStatus.CREATED);
         quote.setUpstreamRawResponse(upstreamQuote.rawResponse());
+        quote.setOfficialQuotationId(upstreamQuote.taskId());
+        quote.setOfficialQuotationChannel(upstreamQuote.selectedChannel());
         quoteRepository.save(quote);
 
         return toResponse(quote);

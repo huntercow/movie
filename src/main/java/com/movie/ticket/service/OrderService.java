@@ -11,6 +11,8 @@ import com.movie.ticket.repository.TicketOrderRepository;
 import com.movie.ticket.repository.TicketQuoteRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -22,11 +24,18 @@ public class OrderService {
     private final QuoteService quoteService;
     private final TicketQuoteRepository quoteRepository;
     private final TicketOrderRepository orderRepository;
+    private final OrderSubmitService orderSubmitService;
 
-    public OrderService(QuoteService quoteService, TicketQuoteRepository quoteRepository, TicketOrderRepository orderRepository) {
+    public OrderService(
+            QuoteService quoteService,
+            TicketQuoteRepository quoteRepository,
+            TicketOrderRepository orderRepository,
+            OrderSubmitService orderSubmitService
+    ) {
         this.quoteService = quoteService;
         this.quoteRepository = quoteRepository;
         this.orderRepository = orderRepository;
+        this.orderSubmitService = orderSubmitService;
     }
 
     @Transactional
@@ -42,11 +51,13 @@ public class OrderService {
         order.setPaymentNo(request.paymentNo());
         order.setFinalPrice(quote.getFinalPrice());
         order.setTotalPrice(quote.getTotalPrice());
-        order.setStatus(OrderStatus.CREATED);
+        order.setSubmitRetryCount(0);
+        order.setStatus(OrderStatus.WAIT_SUBMIT);
         orderRepository.save(order);
 
         quote.setStatus(QuoteStatus.ORDERED);
         quoteRepository.save(quote);
+        submitAfterCommit(order.getOrderNo());
         return toResponse(order);
     }
 
@@ -63,6 +74,9 @@ public class OrderService {
                 order.getCustomerId(),
                 order.getFinalPrice(),
                 order.getTotalPrice(),
+                order.getUpstreamOrderNo(),
+                order.getSubmitRetryCount(),
+                order.getLastSubmitError(),
                 order.getStatus().name()
         );
     }
@@ -70,5 +84,14 @@ public class OrderService {
     private String newOrderNo() {
         return "O" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now())
                 + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
+    }
+
+    private void submitAfterCommit(String orderNo) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                orderSubmitService.submitAsync(orderNo);
+            }
+        });
     }
 }

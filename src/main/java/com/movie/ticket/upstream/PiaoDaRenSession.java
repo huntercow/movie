@@ -37,6 +37,14 @@ public class PiaoDaRenSession {
         setIfPresent(HEAD_IMG_KEY, headImg);
     }
 
+    public String getUserId() {
+        return redisTemplate.opsForValue().get(USER_ID_KEY);
+    }
+
+    public String getUserName() {
+        return redisTemplate.opsForValue().get(USER_NAME_KEY);
+    }
+
     private void setIfPresent(String key, String value) {
         if (StringUtils.hasText(value)) {
             redisTemplate.opsForValue().set(key, value);
