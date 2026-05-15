@@ -3,6 +3,7 @@ package com.movie.ticket.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.movie.ticket.dto.MovieTicketInfo;
 import com.movie.ticket.entity.OrderStatus;
 import com.movie.ticket.entity.TicketOrder;
 import com.movie.ticket.entity.TicketQuote;
@@ -15,13 +16,16 @@ import com.movie.ticket.upstream.TicketUpstreamClient;
 import com.movie.ticket.upstream.UpstreamCancelOrderResult;
 import com.movie.ticket.upstream.UpstreamOrderDetailResult;
 import com.movie.ticket.upstream.UpstreamPayOrderResult;
+import com.movie.ticket.upstream.UpstreamQuote;
 import com.movie.ticket.upstream.UpstreamSubmitOrderResult;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class OrderSubmitService {
@@ -31,19 +35,22 @@ public class OrderSubmitService {
     private final TicketUpstreamClient upstreamClient;
     private final PiaoDaRenSession session;
     private final ObjectMapper objectMapper;
+    private final PricingService pricingService;
 
     public OrderSubmitService(
             TicketOrderRepository orderRepository,
             TicketQuoteRepository quoteRepository,
             TicketUpstreamClient upstreamClient,
             PiaoDaRenSession session,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            PricingService pricingService
     ) {
         this.orderRepository = orderRepository;
         this.quoteRepository = quoteRepository;
         this.upstreamClient = upstreamClient;
         this.session = session;
         this.objectMapper = objectMapper;
+        this.pricingService = pricingService;
     }
 
     @Async
@@ -57,6 +64,8 @@ public class OrderSubmitService {
         TicketOrder order = orderRepository.findByOrderNo(orderNo).orElseThrow();
         try {
             cancelPreviousIfPresent(order);
+            TicketQuote quote = quoteRepository.findByQuoteNo(order.getQuoteNo()).orElseThrow();
+            refreshQuoteBeforeRepeat(order, quote);
             order.setStatus(OrderStatus.WAIT_SUBMIT);
             order.setUpstreamOrderId(null);
             order.setUpstreamOrderNo(null);
@@ -130,6 +139,56 @@ public class OrderSubmitService {
         orderRepository.save(order);
     }
 
+    private void refreshQuoteBeforeRepeat(TicketOrder order, TicketQuote quote) {
+        UpstreamQuote upstreamQuote = upstreamClient.quote(toMovieTicketInfo(quote));
+        BigDecimal maxPrice = parsePrice(quote.getMaxPrice(), "invalid max price from quote");
+        BigDecimal finalPrice = pricingService.calculateFinalPrice(upstreamQuote.price(), maxPrice);
+        int ticketCount = ticketCount(quote.getSeatCount());
+        BigDecimal totalPrice = finalPrice.multiply(BigDecimal.valueOf(ticketCount));
+        BigDecimal totalProfit = finalPrice.subtract(upstreamQuote.price()).multiply(BigDecimal.valueOf(ticketCount));
+
+        quote.setUpstreamPrice(upstreamQuote.price());
+        quote.setFinalPrice(finalPrice);
+        quote.setTotalPrice(totalPrice);
+        quote.setProfit(totalProfit);
+        quote.setUpstreamRawResponse(upstreamQuote.rawResponse());
+        quote.setOfficialQuotationId(upstreamQuote.taskId());
+        quote.setOfficialQuotationChannel(upstreamQuote.selectedChannel());
+        quoteRepository.save(quote);
+
+        order.setFinalPrice(finalPrice);
+        order.setTotalPrice(totalPrice);
+        orderRepository.save(order);
+    }
+
+    private MovieTicketInfo toMovieTicketInfo(TicketQuote quote) {
+        return new MovieTicketInfo(
+                quote.getOcrTaskId(),
+                quote.getProvinceName(),
+                quote.getCityName(),
+                quote.getAreaName(),
+                quote.getCityCode(),
+                quote.getCinemaId(),
+                quote.getCinemaCode(),
+                quote.getCinemaAddress(),
+                quote.getFilmId(),
+                quote.getFilmImg(),
+                quote.getCustomFilmType(),
+                quote.getShowId(),
+                quote.getMovieName(),
+                quote.getCinemaName(),
+                quote.getShowTime(),
+                quote.getHallName(),
+                quote.getPlanType(),
+                quote.getSeatCount(),
+                parseSeats(quote.getSeatsJson()),
+                parseSeatsAndPrice(quote.getSeatsAndPriceJson()),
+                quote.getMaxPrice(),
+                quote.getTotalImagePrice(),
+                quote.getImageUrl()
+        );
+    }
+
     private void fillUpstreamOrderIdIfMissing(TicketOrder order) {
         if (StringUtils.hasText(order.getUpstreamOrderId()) || !StringUtils.hasText(order.getUpstreamOrderNo())) {
             return;
@@ -149,5 +208,29 @@ public class OrderSubmitService {
         } catch (JsonProcessingException exception) {
             return List.of();
         }
+    }
+
+    private Map<String, String> parseSeatsAndPrice(String seatsAndPriceJson) {
+        if (seatsAndPriceJson == null || seatsAndPriceJson.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(seatsAndPriceJson, new TypeReference<>() {
+            });
+        } catch (JsonProcessingException exception) {
+            return Map.of();
+        }
+    }
+
+    private BigDecimal parsePrice(String value, String message) {
+        try {
+            return new BigDecimal(value);
+        } catch (NumberFormatException exception) {
+            throw new BusinessException(message);
+        }
+    }
+
+    private int ticketCount(Integer seatCount) {
+        return seatCount == null || seatCount <= 0 ? 1 : seatCount;
     }
 }

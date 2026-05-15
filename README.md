@@ -100,6 +100,8 @@
 ```text
 如果本地订单已有 upstreamOrderId
 → 调票达人 /film/order/cancelOrder，参数 orderId
+→ 重新调用 /film/order/officialQuotation 刷新 officialQuotationId 和 upstreamPrice
+→ 更新本地 quote/order 的 finalPrice、totalPrice、profit
 → 清空旧的上游订单号/支付响应
 → 重新 officialSubmitOrder
 → 重新 payOrder
