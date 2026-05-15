@@ -13,6 +13,7 @@ import com.movie.ticket.upstream.PiaoDaRenSession;
 import com.movie.ticket.upstream.SubmitOrderCommand;
 import com.movie.ticket.upstream.TicketUpstreamClient;
 import com.movie.ticket.upstream.UpstreamCancelOrderResult;
+import com.movie.ticket.upstream.UpstreamOrderDetailResult;
 import com.movie.ticket.upstream.UpstreamPayOrderResult;
 import com.movie.ticket.upstream.UpstreamSubmitOrderResult;
 import org.springframework.scheduling.annotation.Async;
@@ -104,6 +105,8 @@ public class OrderSubmitService {
             order.setUpstreamPayRequest(payResult.rawRequest());
             order.setUpstreamPayResponse(payResult.rawResponse());
             order.setPaidAt(java.time.LocalDateTime.now());
+            UpstreamOrderDetailResult detailResult = upstreamClient.getOrderDetail(result.orderNumber());
+            order.setUpstreamOrderId(detailResult.orderId());
             order.setStatus(OrderStatus.PAID);
         } catch (Exception exception) {
             order.setLastSubmitError(exception.getMessage());
@@ -113,6 +116,7 @@ public class OrderSubmitService {
     }
 
     private void cancelPreviousIfPresent(TicketOrder order) {
+        fillUpstreamOrderIdIfMissing(order);
         if (StringUtils.hasText(order.getUpstreamOrderNo()) && !StringUtils.hasText(order.getUpstreamOrderId())) {
             throw new BusinessException("cannot cancel previous upstream order without upstream order id");
         }
@@ -123,6 +127,15 @@ public class OrderSubmitService {
         order.setUpstreamCancelRequest(cancelResult.rawRequest());
         order.setUpstreamCancelResponse(cancelResult.rawResponse());
         order.setCanceledAt(java.time.LocalDateTime.now());
+        orderRepository.save(order);
+    }
+
+    private void fillUpstreamOrderIdIfMissing(TicketOrder order) {
+        if (StringUtils.hasText(order.getUpstreamOrderId()) || !StringUtils.hasText(order.getUpstreamOrderNo())) {
+            return;
+        }
+        UpstreamOrderDetailResult detailResult = upstreamClient.getOrderDetail(order.getUpstreamOrderNo());
+        order.setUpstreamOrderId(detailResult.orderId());
         orderRepository.save(order);
     }
 

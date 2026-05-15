@@ -75,6 +75,14 @@
 
 提交成功后保存 `upstreamOrderNo`，随后自动支付。支付成功后状态变为 `PAID`。提交或支付失败后状态变为 `SUBMIT_FAILED`，并保存失败原因。
 
+支付成功后，后台会内部调用：
+
+```text
+/film/order/getOrderDetail?orderNumber=...
+```
+
+并从返回的 `data.orderInfo.id` 保存 `upstreamOrderId`。注意 `upstreamOrderId` 是取消订单用的 `orderId`，和 `upstreamOrderNo` 不是同一个字段。
+
 ### 查询订单
 
 `GET /api/orders/{orderNo}`

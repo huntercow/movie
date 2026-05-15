@@ -14,4 +14,6 @@ public interface TicketUpstreamClient {
     UpstreamPayOrderResult payOrder(String orderNumber);
 
     UpstreamCancelOrderResult cancelOrder(String orderId);
+
+    UpstreamOrderDetailResult getOrderDetail(String orderNumber);
 }

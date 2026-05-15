@@ -187,6 +187,27 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         return new UpstreamCancelOrderResult(orderId, body, response.toString());
     }
 
+    @Override
+    public UpstreamOrderDetailResult getOrderDetail(String orderNumber) {
+        if (!StringUtils.hasText(orderNumber)) {
+            throw new BusinessException("missing upstream order number");
+        }
+        Map<?, ?> response = restClient.get()
+                .uri(requireText(properties.baseUrl(), "missing upstream base url")
+                        + "/film/order/getOrderDetail?orderNumber="
+                        + URLEncoder.encode(orderNumber, StandardCharsets.UTF_8))
+                .headers(headers -> headers.addAll(defaultHeaders(MediaType.APPLICATION_FORM_URLENCODED_VALUE)))
+                .retrieve()
+                .body(Map.class);
+        Map<?, ?> data = extractDataMap(response);
+        Map<?, ?> orderInfo = extractOrderInfoMap(data);
+        String orderId = stringValue(orderInfo.get("id"));
+        if (!StringUtils.hasText(orderId)) {
+            throw new BusinessException("missing orderInfo.id from upstream detail");
+        }
+        return new UpstreamOrderDetailResult(orderId, orderNumber, response.toString());
+    }
+
     private OfficialQuoteResult requestOfficialQuote(MovieTicketInfo ticketInfo, String channel) {
         try {
             Map<String, Object> body = new HashMap<>();
@@ -328,6 +349,14 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
             return discernMap;
         }
         throw new BusinessException("OCR response missing discern");
+    }
+
+    private Map<?, ?> extractOrderInfoMap(Map<?, ?> data) {
+        Object orderInfo = data.get("orderInfo");
+        if (orderInfo instanceof Map<?, ?> orderInfoMap) {
+            return orderInfoMap;
+        }
+        throw new BusinessException("order detail response missing orderInfo");
     }
 
     private List<String> extractSeatNames(Object seatsValue) {
