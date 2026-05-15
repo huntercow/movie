@@ -81,8 +81,41 @@ public class OrderService {
                 order.getSubmitRetryCount(),
                 order.getLastSubmitError(),
                 order.getLastSyncError(),
-                order.getStatus().name()
+                order.getStatus().name(),
+                statusText(order.getStatus()),
+                isTerminal(order.getStatus()),
+                shouldPoll(order.getStatus())
         );
+    }
+
+    private String statusText(OrderStatus status) {
+        if (status == null) {
+            return "\u672a\u77e5";
+        }
+        return switch (status) {
+            case CREATED -> "\u5df2\u521b\u5efa";
+            case WAIT_SUBMIT -> "\u7b49\u5f85\u63d0\u4ea4\u4e0a\u6e38";
+            case SUBMITTING -> "\u63d0\u4ea4\u4e0a\u6e38\u4e2d";
+            case SUBMITTED -> "\u5df2\u63d0\u4ea4\u4e0a\u6e38";
+            case SUBMIT_FAILED -> "\u63d0\u4ea4\u5931\u8d25";
+            case WAIT_PAY -> "\u7b49\u5f85\u652f\u4ed8";
+            case PAID -> "\u5df2\u652f\u4ed8";
+            case TICKETING -> "\u51fa\u7968\u4e2d";
+            case ISSUED -> "\u5df2\u51fa\u7968";
+            case FAILED -> "\u51fa\u7968\u5931\u8d25";
+            case REFUNDED -> "\u5df2\u9000\u6b3e";
+        };
+    }
+
+    private boolean isTerminal(OrderStatus status) {
+        return status == OrderStatus.ISSUED
+                || status == OrderStatus.REFUNDED
+                || status == OrderStatus.FAILED
+                || status == OrderStatus.SUBMIT_FAILED;
+    }
+
+    private boolean shouldPoll(OrderStatus status) {
+        return !isTerminal(status);
     }
 
     private String newOrderNo() {

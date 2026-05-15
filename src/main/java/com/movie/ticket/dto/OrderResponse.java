@@ -15,6 +15,9 @@ public record OrderResponse(
         Integer submitRetryCount,
         String lastSubmitError,
         String lastSyncError,
-        String status
+        String status,
+        String statusText,
+        boolean terminal,
+        boolean shouldPoll
 ) {
 }

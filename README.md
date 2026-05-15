@@ -1,6 +1,14 @@
-# 电影票后端
+# 电影票报价后端
 
-基于 Java 17 + Spring Boot 3 的电影票报价/订单后端。当前已接入 MySQL、Redis、Swagger、阿里云 OSS 上传，以及票达人 OCR/官方报价流程。
+基于 Java 17 + Spring Boot 3.3.5 的电影票报价、下单、支付和出票状态同步后端。
+
+当前已接入：
+
+- MySQL：保存报价单、订单、上游返回数据
+- Redis：缓存票达人登录后的 `user-token`
+- SpringDoc OpenAPI / Swagger：接口调试
+- 阿里云 OSS：上传影票图片，上游 OCR 只识别票达人可访问的图片 URL
+- 票达人上游：登录、OCR、官方报价、下单、支付、取消订单、订单详情同步
 
 ## 技术栈
 
@@ -17,19 +25,41 @@
 
 ## 核心流程
 
+### 报价流程
+
 `POST /api/quotes` 会执行：
 
 ```text
 图片 base64
-→ 上传到阿里云 OSS
-→ 调票达人 OCR：/film/identify/filmIdentify
-→ 调票达人报价 LIMIT_PRICE：/film/order/officialQuotation
-→ 调票达人报价 FIX_PRICE：/film/order/officialQuotation
-→ 选择两个报价中较大的一个
-→ 本地加价
-→ 保存报价单
-→ 返回最终报价
+-> 上传到阿里云 OSS
+-> 调用票达人 OCR：/film/identify/filmIdentify
+-> 调用票达人官方报价 LIMIT_PRICE：/film/order/officialQuotation
+-> 调用票达人官方报价 FIX_PRICE：/film/order/officialQuotation
+-> 选择两个报价里较大的一个
+-> 本地按利润规则计算最终报价
+-> 保存报价单
+-> 返回给客户端
 ```
+
+### 下单流程
+
+`POST /api/orders` 只创建本地订单并立即返回，真正的上游下单在后台异步执行：
+
+```text
+创建本地订单，状态 WAIT_SUBMIT
+-> 异步调用票达人 /film/order/officialSubmitOrder
+-> 保存 upstreamOrderNo
+-> 自动调用票达人 /film/order/payOrder
+-> 调用 /film/order/getOrderDetail?orderNumber=...
+-> 保存 data.orderInfo.id 为 upstreamOrderId
+-> 后台定时同步出票状态
+```
+
+注意：
+
+- `upstreamOrderNo` 是票达人订单号，也就是 `orderNumber`
+- `upstreamOrderId` 是票达人订单 ID，也就是 `data.orderInfo.id`
+- 取消订单接口 `/film/order/cancelOrder` 需要的是 `upstreamOrderId`，不是 `upstreamOrderNo`
 
 ## 接口
 
@@ -66,60 +96,42 @@
 }
 ```
 
-创建本地订单后会立即返回，并异步提交票达人上游订单。订单初始状态为 `WAIT_SUBMIT`，后台任务会调用：
-
-```text
-/film/order/officialSubmitOrder
-/film/order/payOrder
-```
-
-提交成功后保存 `upstreamOrderNo`，随后自动支付。支付成功后状态变为 `PAID`。提交或支付失败后状态变为 `SUBMIT_FAILED`，并保存失败原因。
-
-支付成功后，后台会内部调用：
-
-```text
-/film/order/getOrderDetail?orderNumber=...
-```
-
-并从返回的 `data.orderInfo.id` 保存 `upstreamOrderId`。注意 `upstreamOrderId` 是取消订单用的 `orderId`，和 `upstreamOrderNo` 不是同一个字段。
+返回里的 `orderNo` 是本系统订单号，后续查询、重试、重新下单都用它。
 
 ### 查询订单
 
 `GET /api/orders/{orderNo}`
 
-系统会自动同步已有 `upstreamOrderNo` 且未完成的订单，默认每 30 秒扫描一次。也可以手动触发同步：
-
-```http
-POST /api/orders/{orderNo}/sync
-```
-
-同步逻辑：
+订单返回里前端重点看这些字段：
 
 ```text
-调用 /film/order/getOrderDetail?orderNumber=upstreamOrderNo
-读取 data.orderInfo.orderStatus
-1  → WAIT_PAY
-4  → TICKETING
-5  → ISSUED
-12 → REFUNDED
+status                机器可读状态
+statusText            前端展示文案
+terminal              是否终态
+shouldPoll            是否继续轮询
+upstreamOrderNo        上游订单号 orderNumber
+upstreamOrderId        上游订单 ID，取消订单用
+upstreamOrderStatus    票达人 orderInfo.orderStatus
+ticketCodeInfo         出票成功后的票码/取票图信息 JSON
+lastSubmitError        下单/支付失败原因
+lastSyncError          出票状态同步失败或上游失败原因
 ```
 
-如果 `orderStatus=5`，会解析 `data.ticketInfo[]` 下的：
+微信端建议逻辑：
 
 ```text
-ticket
-ticketCode
-```
-
-并保存到 `ticketCodeInfo`。失败原因按优先级保存到 `lastSyncError`：
-
-```text
-failedReason > refundReason > cancelReason
+创建订单后拿到 orderNo
+-> 每 3~5 秒调用 GET /api/orders/{orderNo}
+-> shouldPoll=true 继续轮询
+-> shouldPoll=false 停止轮询
+-> terminal=true 时按 status 展示最终结果
 ```
 
 ### 重试提交上游订单
 
 `POST /api/orders/{orderNo}/submit/retry`
+
+适用于异步下单失败后，直接重试当前订单的上游提交逻辑。
 
 ### 取消旧上游单并重新下单支付
 
@@ -129,15 +141,19 @@ failedReason > refundReason > cancelReason
 
 ```text
 如果本地订单已有 upstreamOrderId
-→ 调票达人 /film/order/cancelOrder，参数 orderId
-→ 重新调用 /film/order/officialQuotation 刷新 officialQuotationId 和 upstreamPrice
-→ 更新本地 quote/order 的 finalPrice、totalPrice、profit
-→ 清空旧的上游订单号/支付响应
-→ 重新 officialSubmitOrder
-→ 重新 payOrder
+-> 调用票达人 /film/order/cancelOrder，参数 orderId=upstreamOrderId
+-> 重新调用 /film/order/officialQuotation 刷新 officialQuotationId 和 upstreamPrice
+-> 重新计算 finalPrice、totalPrice、profit
+-> 清空旧的上游订单号、提交响应、支付响应
+-> 重新 officialSubmitOrder
+-> 重新 payOrder
 ```
 
-注意：票达人取消接口参数是 `orderId`，不是 `orderNumber`。如果本地只有 `upstreamOrderNo` 但没有 `upstreamOrderId`，系统会拒绝重下单，避免旧上游订单无法取消造成重复订单。
+### 手动同步订单状态
+
+`POST /api/orders/{orderNo}/sync`
+
+正常情况下不需要微信端调用。系统会自动同步已有 `upstreamOrderNo` 且未完成的订单，这个接口主要用于后台排查或人工补偿。
 
 ### 登录票达人
 
@@ -151,35 +167,114 @@ failedReason > refundReason > cancelReason
 }
 ```
 
-登录成功后，`user-token` 会保存到 Redis，后续 OCR 和报价自动使用。
+登录成功后，`user-token` 会保存到 Redis，后续 OCR、报价、下单、支付、同步会自动使用。
 
-登录接口会结构化返回票达人用户资料：
+## 订单状态
 
-```json
-{
-  "loggedIn": true,
-  "userToken": "token",
-  "profile": {
-    "id": "1475639100836352000",
-    "userName": "19934419145",
-    "enable": 1,
-    "regTime": "1771861377543",
-    "openId": "openid",
-    "headImg": "头像地址",
-    "nickname": "Hunter.",
-    "userBusinesses": [
-      {
-        "businessType": "Film"
-      }
-    ]
-  },
-  "raw": {}
-}
+本地订单状态：
+
+```text
+CREATED         已创建
+WAIT_SUBMIT     等待提交上游
+SUBMITTING      提交上游中
+SUBMITTED       已提交上游
+SUBMIT_FAILED   提交失败，终态
+WAIT_PAY        等待支付
+PAID            已支付
+TICKETING       出票中
+ISSUED          已出票，终态
+FAILED          出票失败，终态
+REFUNDED        已退款，终态
+```
+
+前端停止轮询条件：
+
+```text
+ISSUED / FAILED / REFUNDED / SUBMIT_FAILED
+```
+
+## 出票状态同步
+
+系统会自动扫描满足条件的订单：
+
+```text
+有 upstreamOrderNo
+状态属于 SUBMITTED / WAIT_PAY / PAID / TICKETING
+```
+
+默认每 30 秒调用：
+
+```text
+/film/order/getOrderDetail?orderNumber=upstreamOrderNo
+```
+
+同步映射：
+
+```text
+orderInfo.orderStatus = 1   -> WAIT_PAY
+orderInfo.orderStatus = 4   -> TICKETING
+orderInfo.orderStatus = 5   -> ISSUED
+orderInfo.orderStatus = 12  -> REFUNDED
+```
+
+出票成功时解析：
+
+```text
+data.ticketInfo[].ticket
+data.ticketInfo[].ticketCode
+```
+
+并保存到 `ticketCodeInfo`。
+
+失败原因优先级：
+
+```text
+failedReason > refundReason > cancelReason
+```
+
+最终保存到 `lastSyncError`。
+
+## 报价利润规则
+
+最终单价不会超过 OCR 识别出的单张最高票面价 `maxPrice`。
+
+```text
+如果 upstreamPrice > maxPrice：报价失败
+可用利润空间 = maxPrice - upstreamPrice
+期望利润 = 可用利润空间 * markup-rate + fixed-markup
+实际利润 = min(期望利润, 可用利润空间)
+finalPrice = upstreamPrice + 实际利润
+totalPrice = finalPrice * seatCount
+profit = 实际利润 * seatCount
+```
+
+示例：
+
+```yaml
+ticket:
+  pricing:
+    markup-rate: 0.10
+    fixed-markup: 1.00
+```
+
+```text
+upstreamPrice = 27.66
+maxPrice = 33.00
+可用利润空间 = 5.34
+期望利润 = 5.34 * 0.10 + 1.00 = 1.534
+实际利润 = min(1.534, 5.34) = 1.534
+finalPrice = 29.19
+
+如果 seatCount = 2：
+totalPrice = 29.19 * 2 = 58.38
+profit = 1.534 * 2 = 3.07
 ```
 
 ## 配置
 
-真实配置文件 `src/main/resources/application.yml` 不提交到 Git。首次运行可以复制模板：
+真实配置文件 `src/main/resources/application.yml` 不提交到 Git。
+
+首次运行复制模板：
 
 ```bash
 cp src/main/resources/application.example.yml src/main/resources/application.yml
@@ -193,7 +288,7 @@ Copy-Item src/main/resources/application.example.yml src/main/resources/applicat
 
 ### MySQL
 
-先创建数据库和用户，例如：
+创建数据库和用户：
 
 ```sql
 CREATE DATABASE movie_ticket DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -202,17 +297,9 @@ GRANT ALL PRIVILEGES ON movie_ticket.* TO 'movie_ticket'@'%';
 FLUSH PRIVILEGES;
 ```
 
-然后修改 `application.yml`：
-
-```yaml
-spring:
-  datasource:
-    url: jdbc:mysql://localhost:3306/movie_ticket?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: movie_ticket
-    password: change-me
-```
-
 ### Redis
+
+默认连接：
 
 ```yaml
 spring:
@@ -226,6 +313,8 @@ spring:
 
 ### 票达人与 OSS
 
+核心配置：
+
 ```yaml
 ticket:
   upstream:
@@ -235,56 +324,17 @@ ticket:
     quote-path: "/film/order/officialQuotation"
     oss-region: "oss-cn-beijing"
     oss-bucket: "liangpiao-ticket-img"
-    oss-access-key-id: "你的 OSS AccessKeyId"
-    oss-access-key-secret: "你的 OSS AccessKeySecret"
+    oss-access-key-id: ""
+    oss-access-key-secret: ""
     oss-upload-dir: "ticket-img"
-    user-name: "票达人账号"
-    password: "票达人密码"
+    user-name: ""
+    password: ""
     user-type-enum: "Consume"
     auto-login: true
     user-token: ""
 ```
 
-建议使用环境变量或外部配置注入账号、密码、OSS 密钥，不要提交到 Git。
-
-### 报价利润
-
-最终报价不会超过 OCR 识别到的单张最高票面价 `maxPrice`。当前公式：
-
-```text
-如果 upstreamPrice > maxPrice：报价失败
-可用利润空间 = maxPrice - upstreamPrice
-期望利润 = 可用利润空间 × markup-rate + fixed-markup
-实际利润 = min(期望利润, 可用利润空间)
-finalPrice = upstreamPrice + 实际利润
-totalPrice = finalPrice × ticketInfo.seatCount
-profit = 实际利润 × ticketInfo.seatCount
-```
-
-例如：
-
-```yaml
-ticket:
-  pricing:
-    markup-rate: 0.10
-    fixed-markup: 1.00
-```
-
-`upstreamPrice=27.66`，`maxPrice=33.00`：
-
-```text
-可用利润空间 = 33.00 - 27.66 = 5.34
-期望利润 = 5.34 × 0.10 + 1.00 = 1.534
-实际利润 = min(1.534, 5.34) = 1.534
-finalPrice = 27.66 + 1.534 = 29.19
-```
-
-如果识别到 2 张票：
-
-```text
-totalPrice = 29.19 × 2 = 58.38
-profit = 1.534 × 2 = 3.07
-```
+账号、密码、OSS 密钥不要提交到 Git，建议放在本地 `application.yml` 或环境变量。
 
 ## 运行
 
@@ -292,16 +342,30 @@ profit = 1.534 × 2 = 3.07
 mvn spring-boot:run
 ```
 
-默认端口：`8080`
+默认端口：
 
-Swagger UI：`http://localhost:8080/swagger-ui/index.html`
+```text
+8080
+```
 
-OpenAPI JSON：`http://localhost:8080/v3/api-docs`
+Swagger UI：
+
+```text
+http://localhost:8080/swagger-ui/index.html
+```
+
+OpenAPI JSON：
+
+```text
+http://localhost:8080/v3/api-docs
+```
 
 ## 本地测试建议
 
 1. 先用 `mock-enabled: true` 跑通报价和订单接口。
 2. 确认 MySQL、Redis 正常连接。
-3. 再切 `mock-enabled: false`，填入票达人账号和 OSS 配置。
-4. 使用 Swagger 测试 `POST /api/quotes`。
-5. 客户确认后调用 `POST /api/orders`，观察订单是否异步变成 `PAID`。
+3. 再切换 `mock-enabled: false`，填写票达人账号和 OSS 配置。
+4. 调用 `POST /api/upstream/piaodaren/login` 获取并缓存 `user-token`。
+5. 用 Swagger 测试 `POST /api/quotes`。
+6. 客户确认后调用 `POST /api/orders`。
+7. 轮询 `GET /api/orders/{orderNo}`，直到 `shouldPoll=false`。
