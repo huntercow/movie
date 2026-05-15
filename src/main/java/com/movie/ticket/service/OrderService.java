@@ -76,8 +76,11 @@ public class OrderService {
                 order.getTotalPrice(),
                 order.getUpstreamOrderId(),
                 order.getUpstreamOrderNo(),
+                order.getUpstreamOrderStatus(),
+                order.getTicketCodeInfo(),
                 order.getSubmitRetryCount(),
                 order.getLastSubmitError(),
+                order.getLastSyncError(),
                 order.getStatus().name()
         );
     }

@@ -10,8 +10,11 @@ public record OrderResponse(
         BigDecimal totalPrice,
         String upstreamOrderId,
         String upstreamOrderNo,
+        Integer upstreamOrderStatus,
+        String ticketCodeInfo,
         Integer submitRetryCount,
         String lastSubmitError,
+        String lastSyncError,
         String status
 ) {
 }

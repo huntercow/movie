@@ -5,6 +5,7 @@ import com.movie.ticket.dto.CreateOrderRequest;
 import com.movie.ticket.dto.OrderResponse;
 import com.movie.ticket.service.OrderSubmitService;
 import com.movie.ticket.service.OrderService;
+import com.movie.ticket.service.OrderSyncService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,10 +20,12 @@ public class OrderController {
 
     private final OrderService orderService;
     private final OrderSubmitService orderSubmitService;
+    private final OrderSyncService orderSyncService;
 
-    public OrderController(OrderService orderService, OrderSubmitService orderSubmitService) {
+    public OrderController(OrderService orderService, OrderSubmitService orderSubmitService, OrderSyncService orderSyncService) {
         this.orderService = orderService;
         this.orderSubmitService = orderSubmitService;
+        this.orderSyncService = orderSyncService;
     }
 
     @PostMapping
@@ -44,6 +47,12 @@ public class OrderController {
     @PostMapping("/{orderNo}/submit/repeat")
     public ApiResponse<OrderResponse> repeatSubmit(@PathVariable String orderNo) {
         orderSubmitService.repeatSubmitAndPay(orderNo);
+        return ApiResponse.ok(orderService.getOrder(orderNo));
+    }
+
+    @PostMapping("/{orderNo}/sync")
+    public ApiResponse<OrderResponse> sync(@PathVariable String orderNo) {
+        orderSyncService.syncOrder(orderNo);
         return ApiResponse.ok(orderService.getOrder(orderNo));
     }
 }

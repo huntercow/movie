@@ -87,6 +87,36 @@
 
 `GET /api/orders/{orderNo}`
 
+系统会自动同步已有 `upstreamOrderNo` 且未完成的订单，默认每 30 秒扫描一次。也可以手动触发同步：
+
+```http
+POST /api/orders/{orderNo}/sync
+```
+
+同步逻辑：
+
+```text
+调用 /film/order/getOrderDetail?orderNumber=upstreamOrderNo
+读取 data.orderInfo.orderStatus
+1  → WAIT_PAY
+4  → TICKETING
+5  → ISSUED
+12 → REFUNDED
+```
+
+如果 `orderStatus=5`，会解析 `data.ticketInfo[]` 下的：
+
+```text
+ticket
+ticketCode
+```
+
+并保存到 `ticketCodeInfo`。失败原因按优先级保存到 `lastSyncError`：
+
+```text
+failedReason > refundReason > cancelReason
+```
+
 ### 重试提交上游订单
 
 `POST /api/orders/{orderNo}/submit/retry`

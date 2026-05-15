@@ -36,6 +36,7 @@ public class OrderSubmitService {
     private final PiaoDaRenSession session;
     private final ObjectMapper objectMapper;
     private final PricingService pricingService;
+    private final OrderSyncService orderSyncService;
 
     public OrderSubmitService(
             TicketOrderRepository orderRepository,
@@ -43,7 +44,8 @@ public class OrderSubmitService {
             TicketUpstreamClient upstreamClient,
             PiaoDaRenSession session,
             ObjectMapper objectMapper,
-            PricingService pricingService
+            PricingService pricingService,
+            OrderSyncService orderSyncService
     ) {
         this.orderRepository = orderRepository;
         this.quoteRepository = quoteRepository;
@@ -51,6 +53,7 @@ public class OrderSubmitService {
         this.session = session;
         this.objectMapper = objectMapper;
         this.pricingService = pricingService;
+        this.orderSyncService = orderSyncService;
     }
 
     @Async
@@ -117,6 +120,14 @@ public class OrderSubmitService {
             UpstreamOrderDetailResult detailResult = upstreamClient.getOrderDetail(result.orderNumber());
             order.setUpstreamOrderId(detailResult.orderId());
             order.setStatus(OrderStatus.PAID);
+            orderRepository.save(order);
+            try {
+                orderSyncService.syncOrder(orderNo);
+            } catch (Exception syncException) {
+                order.setLastSyncError(syncException.getMessage());
+                orderRepository.save(order);
+            }
+            return;
         } catch (Exception exception) {
             order.setLastSubmitError(exception.getMessage());
             order.setStatus(OrderStatus.SUBMIT_FAILED);

@@ -44,9 +44,19 @@ public class TicketOrder {
     private String upstreamCancelRequest;
     @Lob
     private String upstreamCancelResponse;
+    @Lob
+    private String upstreamDetailResponse;
+    private Integer upstreamOrderStatus;
+    @Lob
+    private String ticketCodeInfo;
+    @Column(length = 1024)
+    private String lastSyncError;
     private LocalDateTime submittedAt;
     private LocalDateTime paidAt;
     private LocalDateTime canceledAt;
+    private LocalDateTime lastSyncAt;
+    private LocalDateTime issuedAt;
+    private LocalDateTime refundedAt;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private OrderStatus status;

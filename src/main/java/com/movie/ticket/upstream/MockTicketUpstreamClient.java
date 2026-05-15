@@ -72,6 +72,6 @@ public class MockTicketUpstreamClient implements TicketUpstreamClient {
     @Override
     public UpstreamOrderDetailResult getOrderDetail(String orderNumber) {
         String orderId = String.valueOf(Math.abs(UUID.randomUUID().getMostSignificantBits()));
-        return new UpstreamOrderDetailResult(orderId, orderNumber, "{\"mockDetail\":true}");
+        return new UpstreamOrderDetailResult(orderId, orderNumber, 5, "{\"ticketItems\":[]}", null, "{\"mockDetail\":true}");
     }
 }

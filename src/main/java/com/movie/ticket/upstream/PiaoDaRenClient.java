@@ -1,5 +1,7 @@
 package com.movie.ticket.upstream;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aliyun.oss.ClientException;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSClientBuilder;
@@ -37,11 +39,13 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
     private final RestClient restClient;
     private final UpstreamProperties properties;
     private final PiaoDaRenSession session;
+    private final ObjectMapper objectMapper;
 
-    public PiaoDaRenClient(RestClient restClient, UpstreamProperties properties, PiaoDaRenSession session) {
+    public PiaoDaRenClient(RestClient restClient, UpstreamProperties properties, PiaoDaRenSession session, ObjectMapper objectMapper) {
         this.restClient = restClient;
         this.properties = properties;
         this.session = session;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -205,7 +209,21 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         if (!StringUtils.hasText(orderId)) {
             throw new BusinessException("missing orderInfo.id from upstream detail");
         }
-        return new UpstreamOrderDetailResult(orderId, orderNumber, response.toString());
+        return new UpstreamOrderDetailResult(
+                orderId,
+                orderNumber,
+                intValue(orderInfo.get("orderStatus")),
+                buildTicketCodeInfo(data.get("ticketInfo")),
+                firstText(
+                        data.get("failedReason"),
+                        data.get("refundReason"),
+                        data.get("cancelReason"),
+                        orderInfo.get("failedReason"),
+                        orderInfo.get("refundReason"),
+                        orderInfo.get("cancelReason")
+                ),
+                toJson(response)
+        );
     }
 
     private OfficialQuoteResult requestOfficialQuote(MovieTicketInfo ticketInfo, String channel) {
@@ -359,6 +377,34 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         throw new BusinessException("order detail response missing orderInfo");
     }
 
+    private String buildTicketCodeInfo(Object ticketInfoValue) {
+        List<Map<String, String>> ticketItems = new ArrayList<>();
+        if (ticketInfoValue instanceof List<?> ticketInfo) {
+            for (Object item : ticketInfo) {
+                if (item instanceof Map<?, ?> itemMap) {
+                    String ticket = firstText(
+                            itemMap.get("ticket"),
+                            itemMap.get("ticketCodeOriginImage"),
+                            itemMap.get("ticketImg"),
+                            itemMap.get("imageUrl")
+                    );
+                    String ticketCode = firstText(
+                            itemMap.get("ticketCode"),
+                            itemMap.get("code"),
+                            itemMap.get("ticketNo")
+                    );
+                    if (StringUtils.hasText(ticket) || StringUtils.hasText(ticketCode)) {
+                        Map<String, String> ticketItem = new LinkedHashMap<>();
+                        ticketItem.put("ticket", ticket);
+                        ticketItem.put("ticketCode", ticketCode);
+                        ticketItems.add(ticketItem);
+                    }
+                }
+            }
+        }
+        return toJson(Map.of("ticketItems", ticketItems));
+    }
+
     private List<String> extractSeatNames(Object seatsValue) {
         List<String> seatNames = new ArrayList<>();
         if (seatsValue instanceof List<?> seats) {
@@ -468,6 +514,14 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
             }
         }
         return null;
+    }
+
+    private String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException exception) {
+            return String.valueOf(value);
+        }
     }
 
     private Integer intValue(Object value) {
