@@ -1,5 +1,6 @@
 package com.movie.ticket.dto;
 
+import com.movie.ticket.entity.SalesChannel;
 import jakarta.validation.constraints.NotBlank;
 
 public record CreateQuoteRequest(
@@ -7,6 +8,6 @@ public record CreateQuoteRequest(
         String imageBase64,
 
         String customerId,
-        String channel
+        SalesChannel channel
 ) {
 }

@@ -45,6 +45,11 @@
 }
 ```
 
+`channel` 当前支持：
+
+- `WECHAT`
+- `GOOFISH`
+
 ### 查询报价
 
 `GET /api/quotes/{quoteNo}`

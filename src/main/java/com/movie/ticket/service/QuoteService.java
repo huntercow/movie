@@ -60,7 +60,7 @@ public class QuoteService {
         TicketQuote quote = new TicketQuote();
         quote.setQuoteNo(newQuoteNo());
         quote.setCustomerId(request.customerId());
-        quote.setChannel(request.channel());
+        quote.setChannel(request.channel() == null ? null : request.channel().name());
         quote.setImageUrl(uploadedImage.imageUrl());
         quote.setUpstreamImageId(uploadedImage.upstreamImageId());
         quote.setOcrTaskId(ticketInfo.taskId());
