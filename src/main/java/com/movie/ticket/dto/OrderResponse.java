@@ -8,6 +8,7 @@ public record OrderResponse(
         String customerId,
         BigDecimal finalPrice,
         BigDecimal totalPrice,
+        String upstreamOrderId,
         String upstreamOrderNo,
         Integer submitRetryCount,
         String lastSubmitError,

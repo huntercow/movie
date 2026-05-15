@@ -6,16 +6,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.movie.ticket.entity.OrderStatus;
 import com.movie.ticket.entity.TicketOrder;
 import com.movie.ticket.entity.TicketQuote;
+import com.movie.ticket.exception.BusinessException;
 import com.movie.ticket.repository.TicketOrderRepository;
 import com.movie.ticket.repository.TicketQuoteRepository;
 import com.movie.ticket.upstream.PiaoDaRenSession;
 import com.movie.ticket.upstream.SubmitOrderCommand;
 import com.movie.ticket.upstream.TicketUpstreamClient;
+import com.movie.ticket.upstream.UpstreamCancelOrderResult;
 import com.movie.ticket.upstream.UpstreamPayOrderResult;
 import com.movie.ticket.upstream.UpstreamSubmitOrderResult;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.util.List;
 
@@ -48,6 +51,29 @@ public class OrderSubmitService {
         doSubmit(orderNo);
     }
 
+    @Transactional
+    public void repeatSubmitAndPay(String orderNo) {
+        TicketOrder order = orderRepository.findByOrderNo(orderNo).orElseThrow();
+        try {
+            cancelPreviousIfPresent(order);
+            order.setStatus(OrderStatus.WAIT_SUBMIT);
+            order.setUpstreamOrderId(null);
+            order.setUpstreamOrderNo(null);
+            order.setUpstreamSubmitRequest(null);
+            order.setUpstreamSubmitResponse(null);
+            order.setUpstreamPayRequest(null);
+            order.setUpstreamPayResponse(null);
+            order.setSubmittedAt(null);
+            order.setPaidAt(null);
+            orderRepository.save(order);
+            doSubmit(orderNo);
+        } catch (Exception exception) {
+            order.setLastSubmitError(exception.getMessage());
+            order.setStatus(OrderStatus.SUBMIT_FAILED);
+            orderRepository.save(order);
+        }
+    }
+
     private void doSubmit(String orderNo) {
         TicketOrder order = orderRepository.findByOrderNo(orderNo).orElseThrow();
         if (order.getStatus() != OrderStatus.WAIT_SUBMIT && order.getStatus() != OrderStatus.SUBMIT_FAILED) {
@@ -68,6 +94,7 @@ public class OrderSubmitService {
                     quote.getOfficialQuotationId(),
                     quote.getOfficialQuotationChannel()
             ));
+            order.setUpstreamOrderId(result.orderId());
             order.setUpstreamOrderNo(result.orderNumber());
             order.setUpstreamSubmitRequest(result.rawRequest());
             order.setUpstreamSubmitResponse(result.rawResponse());
@@ -82,6 +109,20 @@ public class OrderSubmitService {
             order.setLastSubmitError(exception.getMessage());
             order.setStatus(OrderStatus.SUBMIT_FAILED);
         }
+        orderRepository.save(order);
+    }
+
+    private void cancelPreviousIfPresent(TicketOrder order) {
+        if (StringUtils.hasText(order.getUpstreamOrderNo()) && !StringUtils.hasText(order.getUpstreamOrderId())) {
+            throw new BusinessException("cannot cancel previous upstream order without upstream order id");
+        }
+        if (!StringUtils.hasText(order.getUpstreamOrderId())) {
+            return;
+        }
+        UpstreamCancelOrderResult cancelResult = upstreamClient.cancelOrder(order.getUpstreamOrderId());
+        order.setUpstreamCancelRequest(cancelResult.rawRequest());
+        order.setUpstreamCancelResponse(cancelResult.rawResponse());
+        order.setCanceledAt(java.time.LocalDateTime.now());
         orderRepository.save(order);
     }
 

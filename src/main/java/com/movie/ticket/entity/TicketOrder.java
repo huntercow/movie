@@ -31,6 +31,7 @@ public class TicketOrder {
     private Integer submitRetryCount;
     @Column(length = 1024)
     private String lastSubmitError;
+    private String upstreamOrderId;
     @Lob
     private String upstreamSubmitRequest;
     @Lob
@@ -39,8 +40,13 @@ public class TicketOrder {
     private String upstreamPayRequest;
     @Lob
     private String upstreamPayResponse;
+    @Lob
+    private String upstreamCancelRequest;
+    @Lob
+    private String upstreamCancelResponse;
     private LocalDateTime submittedAt;
     private LocalDateTime paidAt;
+    private LocalDateTime canceledAt;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private OrderStatus status;

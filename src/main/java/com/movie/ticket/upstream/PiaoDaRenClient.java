@@ -158,10 +158,11 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         Map<?, ?> response = postJson("/film/order/officialSubmitOrder", body);
         Map<?, ?> data = extractDataMap(response);
         String orderNumber = stringValue(data.get("orderNumber"));
+        String orderId = firstText(data.get("orderId"), data.get("id"));
         if (!StringUtils.hasText(orderNumber)) {
             throw new BusinessException("missing upstream order number");
         }
-        return new UpstreamSubmitOrderResult(orderNumber, body.toString(), response.toString());
+        return new UpstreamSubmitOrderResult(orderId, orderNumber, body.toString(), response.toString());
     }
 
     @Override
@@ -173,6 +174,17 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         Map<?, ?> response = postForm("/film/order/payOrder", body);
         extractDataMapAllowEmpty(response);
         return new UpstreamPayOrderResult(orderNumber, body, response.toString());
+    }
+
+    @Override
+    public UpstreamCancelOrderResult cancelOrder(String orderId) {
+        if (!StringUtils.hasText(orderId)) {
+            throw new BusinessException("missing upstream order id");
+        }
+        String body = "orderId=" + URLEncoder.encode(orderId, StandardCharsets.UTF_8);
+        Map<?, ?> response = postForm("/film/order/cancelOrder", body);
+        extractDataMapAllowEmpty(response);
+        return new UpstreamCancelOrderResult(orderId, body, response.toString());
     }
 
     private OfficialQuoteResult requestOfficialQuote(MovieTicketInfo ticketInfo, String channel) {
@@ -417,6 +429,16 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
 
     private String stringValue(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    private String firstText(Object... values) {
+        for (Object value : values) {
+            String text = stringValue(value);
+            if (StringUtils.hasText(text)) {
+                return text;
+            }
+        }
+        return null;
     }
 
     private Integer intValue(Object value) {

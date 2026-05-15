@@ -83,6 +83,22 @@
 
 `POST /api/orders/{orderNo}/submit/retry`
 
+### 取消旧上游单并重新下单支付
+
+`POST /api/orders/{orderNo}/submit/repeat`
+
+用于人工手动重新下单支付。流程：
+
+```text
+如果本地订单已有 upstreamOrderId
+→ 调票达人 /film/order/cancelOrder，参数 orderId
+→ 清空旧的上游订单号/支付响应
+→ 重新 officialSubmitOrder
+→ 重新 payOrder
+```
+
+注意：票达人取消接口参数是 `orderId`，不是 `orderNumber`。如果本地只有 `upstreamOrderNo` 但没有 `upstreamOrderId`，系统会拒绝重下单，避免旧上游订单无法取消造成重复订单。
+
 ### 登录票达人
 
 `POST /api/upstream/piaodaren/login`

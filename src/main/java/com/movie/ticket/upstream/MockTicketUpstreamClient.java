@@ -55,11 +55,17 @@ public class MockTicketUpstreamClient implements TicketUpstreamClient {
 
     @Override
     public UpstreamSubmitOrderResult submitOrder(SubmitOrderCommand command) {
-        return new UpstreamSubmitOrderResult("MOCK" + UUID.randomUUID(), command.toString(), "{\"mock\":true}");
+        String id = String.valueOf(Math.abs(UUID.randomUUID().getMostSignificantBits()));
+        return new UpstreamSubmitOrderResult(id, "MOCK" + UUID.randomUUID(), command.toString(), "{\"mock\":true}");
     }
 
     @Override
     public UpstreamPayOrderResult payOrder(String orderNumber) {
         return new UpstreamPayOrderResult(orderNumber, "orderNumber=" + orderNumber, "{\"mockPay\":true}");
+    }
+
+    @Override
+    public UpstreamCancelOrderResult cancelOrder(String orderId) {
+        return new UpstreamCancelOrderResult(orderId, "orderId=" + orderId, "{\"mockCancel\":true}");
     }
 }

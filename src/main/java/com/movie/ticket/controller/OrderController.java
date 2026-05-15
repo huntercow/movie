@@ -40,4 +40,10 @@ public class OrderController {
         orderSubmitService.submitAsync(orderNo);
         return ApiResponse.ok(null);
     }
+
+    @PostMapping("/{orderNo}/submit/repeat")
+    public ApiResponse<OrderResponse> repeatSubmit(@PathVariable String orderNo) {
+        orderSubmitService.repeatSubmitAndPay(orderNo);
+        return ApiResponse.ok(orderService.getOrder(orderNo));
+    }
 }

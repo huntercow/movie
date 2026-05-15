@@ -1,8 +1,7 @@
 package com.movie.ticket.upstream;
 
-public record UpstreamSubmitOrderResult(
+public record UpstreamCancelOrderResult(
         String orderId,
-        String orderNumber,
         String rawRequest,
         String rawResponse
 ) {

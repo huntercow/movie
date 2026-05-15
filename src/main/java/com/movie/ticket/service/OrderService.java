@@ -74,6 +74,7 @@ public class OrderService {
                 order.getCustomerId(),
                 order.getFinalPrice(),
                 order.getTotalPrice(),
+                order.getUpstreamOrderId(),
                 order.getUpstreamOrderNo(),
                 order.getSubmitRetryCount(),
                 order.getLastSubmitError(),
