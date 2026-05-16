@@ -63,6 +63,80 @@
 
 ## 接口
 
+### 机器人私聊报价
+
+`POST /api/bot/messages/image`
+
+机器人收到用户私聊发送的电影票截图后调用。后端会创建或更新客户档案，并完成上传、OCR、报价。
+
+```json
+{
+  "wechatId": "wx_19934419145",
+  "nickname": "Hunter",
+  "avatarUrl": "https://example.com/avatar.jpg",
+  "messageId": "msg_10001",
+  "imageBase64": "图片base64"
+}
+```
+
+返回里的 `customerNo` 是本系统客户编号，后续报价、收款、订单都会绑定这个客户。
+
+`messageId` 用于幂等：
+
+```text
+同一个 wechatId + messageId 重复请求：直接返回第一次生成的 quote，不重复 OCR/报价
+同一个用户发送新的图片：必须传新的 messageId，系统会生成新的 quote，并把它设置为 latestQuoteNo
+收款和创建订单只允许使用该客户 latestQuoteNo 对应的报价
+```
+
+机器人侧实际处理建议：
+
+```text
+用户每发一张新图，就用机器人平台的新消息 ID 调 /api/bot/messages/image
+后端返回 duplicated=true，说明这是同一条消息重试，不要重复回复用户
+后端返回 latest=false，说明这条重复消息对应的报价已经不是最新图，机器人应忽略它
+```
+
+### 机器人确认收款
+
+`POST /api/bot/payments/confirm`
+
+人工或机器人确认用户已转账后调用。没有确认收款前，不应该创建订单。
+
+```json
+{
+  "wechatId": "wx_19934419145",
+  "quoteNo": "Q20260516120000ABCDEFGH",
+  "amount": 58.38,
+  "paymentNo": "wx-transfer-10001",
+  "proofImageUrl": "https://example.com/pay.jpg",
+  "confirmer": "admin",
+  "remark": "微信私聊转账"
+}
+```
+
+### 机器人创建订单
+
+`POST /api/bot/orders`
+
+校验报价归属和已确认收款金额后创建订单。创建成功后，该收款记录会标记为 `USED`，避免重复使用。
+
+```json
+{
+  "wechatId": "wx_19934419145",
+  "quoteNo": "Q20260516120000ABCDEFGH",
+  "paymentRecordNo": "P20260516120000ABCDEFGH"
+}
+```
+
+如果 `paymentRecordNo` 为空，系统会自动使用该报价最近一条 `CONFIRMED` 收款记录。
+
+### 机器人查询订单
+
+`GET /api/bot/orders/{orderNo}`
+
+机器人轮询该接口获取出票状态。`shouldPoll=false` 时停止轮询，并按 `status` 和 `ticketCodeInfo` 给用户发送最终结果。
+
 ### 创建报价
 
 `POST /api/quotes`
