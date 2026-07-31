@@ -34,9 +34,12 @@ class DatabaseMigrationIT {
                 .load()
                 .migrate();
 
-        assertThat(result.migrationsExecuted).isEqualTo(8);
+        assertThat(result.migrationsExecuted).isEqualTo(9);
         assertThat(tableExists("app_user")).isTrue();
         assertThat(tableExists("job_task")).isTrue();
+        assertThat(tableExists("ticket_quote")).isTrue();
+        assertThat(tableExists("ticket_order")).isTrue();
+        assertThat(tableExists("xianyu_delivery_record")).isTrue();
         assertThat(columnExists("xianyu_platform_order", "amount_verified_at")).isTrue();
         assertThat(columnExists("xianyu_platform_order", "delivery_attempt_id")).isTrue();
     }
