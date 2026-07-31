@@ -1,7 +1,7 @@
 ---
 id: I048
 title: "建立 CI、TDD 证据模板与主干保护"
-status: verification
+status: done
 epic: E00
 milestone: V1-GA
 priority: P0
@@ -81,7 +81,9 @@ git diff --check
 - 已创建 PR 模板，要求 Issue、Test Plan、Red、Green、Refactor、Validation、Manual Acceptance、Risks/Rollback 和安全数据检查。
 - 已创建不输出敏感原文的 secrets 扫描与文档/diff 检查脚本；源码、Fixture、文档及构建后检查均复用该扫描器。测试报告和构建产物仅在扫描成功时上传。
 - 已锁定 `checkout`、`setup-java`、`setup-node` 和 `upload-artifact` 的完整 commit SHA；本地 YAML 合同校验通过，扩展 139/139 测试、类型检查和构建通过。
-- **状态**：`verification`。本地无法模拟 GitHub Runner 的 Docker/Actions 环境；需先让五个 Job 在 CI 成功运行，再根据结果配置 `main` 分支保护。当前未启用保护，也未关闭 Issue。
+- **CI 最终验证**：[Run 30608884401](https://github.com/huntercow/movie/actions/runs/30608884401) 的 `backend-unit-contract`、`backend-mysql-integration`、`web-test-build`、`extension-test-build`、`docs-and-diff-check` 五个固定 Job 全部通过。
+- **主干保护**：`main` 已启用保护；Required Checks 为上述五个 Job，`strict=true`，`enforce_admins=true`，`allow_force_pushes=false`，`allow_deletions=false`。单人仓库未设置审批人数要求。
+- **状态**：`done`。保护 API 已核验，管理员不能绕过检查直接更新主干。
 
 ## PRD 追踪
 

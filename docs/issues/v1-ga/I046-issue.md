@@ -1,7 +1,7 @@
 ---
 id: I046
 title: "建立后端 TDD 测试分层与 MySQL 集成门禁"
-status: verification
+status: done
 epic: E00
 milestone: V1-GA
 priority: P0
@@ -81,7 +81,8 @@ git diff --check
 - **快速回归**：`mvn test` 和 `mvn verify` 均通过，后端总计 124/124；相对 122 个基线新增 2 个安全合同测试。JaCoCo 全局行覆盖约 49%、分支覆盖约 42%。
 - **集成门禁**：`mvn verify -Pintegration` 未跳过测试，124 个快速测试通过后，`DatabaseMigrationIT` 因本机不存在 Docker/Podman（`/var/run/docker.sock` 不存在）明确失败；结果为 1 error / 0 skipped。
 - **CI 首次集成结果**：GitHub Actions 的 MySQL 8.0.36 容器实际启动成功，但干净库在 V6 暴露出原业务表未被任何迁移创建的依赖缺口。未修改 V1–V8；新增 `V5.1` 幂等业务表基线并将迁移合同提升为 9 个版本，同时补充订单、报价和发货记录表存在性断言。
-- **状态**：保持 `verification`，待 Docker 可用的 CI 环境完成 MySQL 8.0.36 与完整 Flyway 门禁后再关闭。
+- **CI 最终验证**：[Run 30608884401](https://github.com/huntercow/movie/actions/runs/30608884401) 的五个 Job 全部通过；`backend-mysql-integration` 在 MySQL 8.0.36 容器中完成 9 个 Flyway 迁移且 0 失败、0 跳过。
+- **状态**：`done`。本机仍因没有 Docker 保持集成命令明确失败，但 GitHub Runner 已完成真实 MySQL 门禁。
 
 ## PRD 追踪
 
