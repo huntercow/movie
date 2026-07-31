@@ -1,0 +1,591 @@
+openapi: 3.0.3
+info:
+  title: 电影票多用户平台 API
+  version: 0.3.0
+  description: |
+    用户控制台、用户管理、客户端 Token 激活和多用户资源接口。
+    响应统一为 `{ success, message, data }`。Token 明文只在创建时返回一次。
+servers:
+  - url: http://127.0.0.1:8080
+    description: 本地环境
+tags:
+  - name: 1. 系统初始化与登录
+  - name: 2. 用户账号
+  - name: 3. 管理员管理
+  - name: 4. 客户端 Token
+  - name: 5. 用户资源
+  - name: 6. 用户业务
+  - name: 7. 管理员监控
+
+paths:
+  /api/v1/auth/bootstrap-status:
+    get:
+      tags: [1. 系统初始化与登录]
+      summary: 查询是否已经初始化管理员
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /api/v1/auth/bootstrap:
+    post:
+      tags: [1. 系统初始化与登录]
+      summary: 创建唯一初始管理员
+      description: 仅当系统中没有任何用户时成功。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BootstrapRequest' }
+            example: { username: admin, password: <admin-password-placeholder>}
+      responses:
+        '200': { $ref: '#/components/responses/AuthOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/auth/login:
+    post:
+      tags: [1. 系统初始化与登录]
+      summary: 用户或管理员登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+            example: { username: '{{username}}', password: '{{password}}' }
+      responses:
+        '200': { $ref: '#/components/responses/AuthOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/v1/app/account/me:
+    get:
+      tags: [2. 用户账号]
+      summary: 查询当前用户与授权快照
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/UserOk' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/app/account/change-password:
+    post:
+      tags: [2. 用户账号]
+      summary: 修改密码
+      description: 管理员创建的用户首次登录后必须先修改密码，才能创建 Token 或执行新业务。
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+            example: { currentPassword: '{{password}}', newPassword: '{{newPassword}}' }
+      responses:
+        '200': { $ref: '#/components/responses/UserOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/app/account/logout:
+    post:
+      tags: [2. 用户账号]
+      summary: 注销当前会话
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
+  /api/v1/admin/users:
+    get:
+      tags: [3. 管理员管理]
+      summary: 查询全部用户
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [3. 管理员管理]
+      summary: 创建用户
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUserRequest' }
+            example:
+              username: user001
+              initialPassword: initial-password-001
+      responses:
+        '200': { $ref: '#/components/responses/UserOk' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/admin/users/{userId}:
+    get:
+      tags: [3. 管理员管理]
+      summary: 查询指定用户
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      responses:
+        '200': { $ref: '#/components/responses/UserOk' }
+  /api/v1/admin/users/{userId}/status:
+    put:
+      tags: [3. 管理员管理]
+      summary: 启用或停用用户
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties: { status: { type: string, enum: [ACTIVE, SUSPENDED] } }
+            example: { status: SUSPENDED }
+      responses:
+        '200': { $ref: '#/components/responses/UserOk' }
+  /api/v1/admin/users/{userId}/reset-password:
+    post:
+      tags: [3. 管理员管理]
+      summary: 重置用户初始密码
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [initialPassword]
+              properties: { initialPassword: { type: string, minLength: 10, maxLength: 100 } }
+            example: { initialPassword: new-initial-password }
+      responses:
+        '200': { $ref: '#/components/responses/UserOk' }
+  /api/v1/admin/agent-tokens:
+    get:
+      tags: [3. 管理员管理]
+      summary: 查询所有用户的客户端 Token
+      description: 管理员查看待审批、有效和已过期 Token，不返回 Token 明文。
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /api/v1/admin/agent-tokens/{tokenId}/expiry:
+    put:
+      tags: [3. 管理员管理]
+      summary: 设置或续期 Token 有效期
+      description: PENDING Token 设置未来到期时间后转为 UNUSED；到期后所有携带该 Token 的客户端请求都会被拒绝。
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/TokenId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expiresAt]
+              properties: { expiresAt: { type: string, format: date-time } }
+            example: { expiresAt: '2027-07-21T00:00:00' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/admin/agent-tokens/{tokenId}/revoke:
+    post:
+      tags: [3. 管理员管理]
+      summary: 管理员吊销 Token
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/TokenId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
+  /api/v1/app/agents:
+    get:
+      tags: [4. 客户端 Token]
+      summary: 查询当前用户的 Token 和绑定安装
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /api/v1/app/agents/tokens:
+    post:
+      tags: [4. 客户端 Token]
+      summary: 创建插件或机器人 Token
+      description: 明文 Token 只返回一次。新 Token 状态为 PENDING，管理员设置有效期前不能激活。
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agentType]
+              properties:
+                agentType: { $ref: '#/components/schemas/AgentType' }
+            example: { agentType: XIANYU_PLUGIN }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/app/agents/tokens/{tokenId}/unbind:
+    post:
+      tags: [4. 客户端 Token]
+      summary: 解绑当前安装
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/TokenId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /api/v1/app/agents/tokens/{tokenId}/revoke:
+    post:
+      tags: [4. 客户端 Token]
+      summary: 永久吊销 Token
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/TokenId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /api/v1/agents/activate:
+    post:
+      tags: [4. 客户端 Token]
+      summary: 客户端首次激活
+      description: 同一 Token 已绑定其他 installationId 时返回 HTTP 400，必须先由用户解绑。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentActivationRequest' }
+            example:
+              token: '{{pluginToken}}'
+              agentType: XIANYU_PLUGIN
+              installationId: '{{pluginInstallationId}}'
+              instanceName: Chrome 插件-办公室
+              clientVersion: 0.1.0
+              currentXianyuAccountId: '2200123456789'
+              currentXianyuNickname: 测试卖家
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/agents/heartbeat:
+    post:
+      tags: [4. 客户端 Token]
+      summary: 客户端心跳
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentHeartbeatRequest' }
+            example:
+              token: '{{pluginToken}}'
+              agentType: XIANYU_PLUGIN
+              installationId: '{{pluginInstallationId}}'
+              clientVersion: 0.1.0
+              currentXianyuAccountId: '2200123456789'
+              currentXianyuNickname: 测试卖家
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/v1/app/upstream-account:
+    get:
+      tags: [5. 用户资源]
+      summary: 查询当前用户的良票账号状态
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+    put:
+      tags: [5. 用户资源]
+      summary: 加密保存当前用户的良票账号
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpstreamAccountRequest' }
+            example: { provider: liangpiao-h5, username: '{{upstreamUsername}}', password: '{{upstreamPassword}}' }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/app/upstream-account/login:
+    post:
+      tags: [5. 用户资源]
+      summary: 使用当前用户保存的凭据登录上游
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /api/v1/app/upstream-account/status:
+    get:
+      tags: [5. 用户资源]
+      summary: 查询当前用户的上游会话
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
+  /api/v1/app/quotes:
+    get:
+      tags: [6. 用户业务]
+      summary: 查询当前用户最近 100 条报价
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+    post:
+      tags: [6. 用户业务]
+      summary: 创建报价
+      description: 可能调用 OSS、OCR 和真实询价，但不会下单。
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateQuoteRequest' }
+            example: { imageBase64: '{{ticketImageBase64}}', customerId: manual-001, channel: GOOFISH }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /api/v1/app/quotes/{quoteNo}:
+    get:
+      tags: [6. 用户业务]
+      summary: 查询当前用户报价
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/QuoteNo' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /api/v1/app/orders:
+    get:
+      tags: [6. 用户业务]
+      summary: 查询当前用户最近 100 条订单
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+    post:
+      tags: [6. 用户业务]
+      summary: 高风险：人工创建真实订单
+      description: "`confirmed` 必须为 true；创建后进入持久化上游提交队列。"
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateManualOrderRequest' }
+            example: { quoteNo: '{{quoteNo}}', customerId: manual-001, paymentNo: pay-001, confirmed: true }
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/app/orders/{orderNo}:
+    get:
+      tags: [6. 用户业务]
+      summary: 查询当前用户订单
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OrderNo' }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /api/v1/app/reply-config:
+    get:
+      tags: [6. 用户业务]
+      summary: 查询当前用户闲鱼话术
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+    put:
+      tags: [6. 用户业务]
+      summary: 保存当前用户闲鱼话术
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReplyConfigRequest' }
+            example:
+              templates: { welcome: 您好，请发送电影票截图 }
+              keywordRules: [{ id: hello, enabled: true, keywords: [你好], priority: 100, reply: 您好，请发送截图 }]
+              textFallbackEnabled: false
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
+  /api/v1/admin/orders:
+    get:
+      tags: [7. 管理员监控]
+      summary: 查询全局最近 200 条订单
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /api/v1/admin/jobs:
+    get:
+      tags: [7. 管理员监控]
+      summary: 查询最近 100 个持久任务
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+  /api/v1/admin/audit-logs:
+    get:
+      tags: [7. 管理员监控]
+      summary: 查询最近 100 条审计日志
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/Ok' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-session-token
+    pluginRuntime:
+      type: apiKey
+      in: header
+      name: X-Plugin-Token
+      description: 用户创建的闲鱼插件 Token
+    pluginInstallation:
+      type: apiKey
+      in: header
+      name: X-Plugin-Installation-Id
+      description: 插件本地持久化 UUID
+    botRuntime:
+      type: apiKey
+      in: header
+      name: X-Bot-Token
+    botInstallation:
+      type: apiKey
+      in: header
+      name: X-Bot-Installation-Id
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    TokenId:
+      name: tokenId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    QuoteNo:
+      name: quoteNo
+      in: path
+      required: true
+      schema: { type: string }
+    OrderNo:
+      name: orderNo
+      in: path
+      required: true
+      schema: { type: string }
+  schemas:
+    BootstrapRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 64 }
+        password: { type: string, minLength: 10, maxLength: 100 }
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: { type: string }
+        newPassword: { type: string, minLength: 10, maxLength: 100 }
+    CreateUserRequest:
+      type: object
+      required: [username, initialPassword]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 64 }
+        initialPassword: { type: string, minLength: 10, maxLength: 100 }
+    AgentType:
+      type: string
+      enum: [XIANYU_PLUGIN, WECHAT_BOT]
+    AgentActivationRequest:
+      type: object
+      required: [token, agentType, installationId]
+      properties:
+        token: { type: string }
+        agentType: { $ref: '#/components/schemas/AgentType' }
+        installationId: { type: string, maxLength: 128 }
+        instanceName: { type: string, maxLength: 128 }
+        clientVersion: { type: string, maxLength: 64 }
+        currentXianyuAccountId: { type: string, maxLength: 128, description: 插件当前检测到的闲鱼账号 ID；省略时保持旧快照，空字符串表示已退出登录。 }
+        currentXianyuNickname: { type: string, maxLength: 128 }
+    AgentHeartbeatRequest:
+      type: object
+      required: [token, agentType, installationId]
+      properties:
+        token: { type: string }
+        agentType: { $ref: '#/components/schemas/AgentType' }
+        installationId: { type: string, maxLength: 128 }
+        clientVersion: { type: string, maxLength: 64 }
+        currentXianyuAccountId: { type: string, maxLength: 128, description: 插件当前检测到的闲鱼账号 ID；省略时保持旧快照，空字符串表示已退出登录。 }
+        currentXianyuNickname: { type: string, maxLength: 128 }
+    UpstreamAccountRequest:
+      type: object
+      required: [provider, username, password]
+      properties:
+        provider: { type: string, maxLength: 64 }
+        username: { type: string, maxLength: 256 }
+        password: { type: string, maxLength: 256 }
+    CreateQuoteRequest:
+      type: object
+      required: [imageBase64]
+      properties:
+        imageBase64: { type: string }
+        customerId: { type: string }
+        channel: { type: string, enum: [WECHAT, GOOFISH] }
+    CreateManualOrderRequest:
+      type: object
+      required: [quoteNo, confirmed]
+      properties:
+        quoteNo: { type: string }
+        customerId: { type: string, nullable: true }
+        paymentNo: { type: string, nullable: true }
+        confirmed: { type: boolean, enum: [true] }
+    ReplyConfigRequest:
+      type: object
+      required: [templates, keywordRules, textFallbackEnabled]
+      properties:
+        templates: { type: object, additionalProperties: { type: string } }
+        keywordRules: { type: array, items: { type: object, additionalProperties: true } }
+        textFallbackEnabled: { type: boolean }
+    ApiEnvelope:
+      type: object
+      required: [success, message]
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+        data: { nullable: true }
+    UserView:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        role: { type: string, enum: [ADMIN, USER] }
+        status: { type: string, enum: [ACTIVE, SUSPENDED] }
+        mustChangePassword: { type: boolean }
+        lastLoginAt: { type: string, format: date-time, nullable: true }
+    AuthEnvelope:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string, example: ok }
+        data:
+          type: object
+          properties:
+            accessToken: { type: string }
+            expiresAt: { type: string, format: date-time }
+            user: { $ref: '#/components/schemas/UserView' }
+  responses:
+    Ok:
+      description: 成功
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiEnvelope' }
+    AuthOk:
+      description: 登录或初始化成功
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AuthEnvelope' }
+    UserOk:
+      description: 用户信息
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties: { data: { $ref: '#/components/schemas/UserView' } }
+    BadRequest:
+      description: 参数或业务规则错误
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiEnvelope' }
+    Unauthorized:
+      description: 登录会话或客户端身份无效
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiEnvelope' }
+    Forbidden:
+      description: 不是管理员
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiEnvelope' }

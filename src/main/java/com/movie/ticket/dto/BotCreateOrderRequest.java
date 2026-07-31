@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 
 @Schema(description = "Bot order creation request after payment confirmation")
 public record BotCreateOrderRequest(
-        @Schema(description = "Private WeChat user id", example = "wx_19934419145")
+        @Schema(description = "Private WeChat user id", example = "wx_13800138000")
         @NotBlank(message = "wechatId is required")
         String wechatId,
 

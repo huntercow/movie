@@ -10,11 +10,18 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Entity
-public class TicketOrder {
+@jakarta.persistence.EntityListeners(com.movie.ticket.shared.persistence.UserScopeEntityListener.class)
+public class TicketOrder implements com.movie.ticket.shared.persistence.UserScopedEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "user_id")
+    private Long userId;
+
+    @Version
+    private Long version;
 
     @Column(nullable = false, unique = true, length = 64)
     private String orderNo;
@@ -22,6 +29,7 @@ public class TicketOrder {
     private String quoteNo;
     @Column(nullable = false, length = 64)
     private String customerId;
+    @Column(unique = true, length = 128)
     private String paymentNo;
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal finalPrice;

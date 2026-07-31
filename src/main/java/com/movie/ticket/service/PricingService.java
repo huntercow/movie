@@ -26,15 +26,18 @@ public class PricingService {
         if (upstreamPrice.compareTo(maxPrice) > 0) {
             throw new BusinessException("quote failed: upstream price is higher than max price");
         }
-        BigDecimal markupRate = defaultValue(properties.markupRate(), BigDecimal.ZERO);
-        BigDecimal fixedMarkup = defaultValue(properties.fixedMarkup(), BigDecimal.ZERO);
+        BigDecimal markupRate = requireNonNegative(properties.markupRate(), "pricing markup rate");
+        BigDecimal fixedMarkup = requireNonNegative(properties.fixedMarkup(), "pricing fixed markup");
         BigDecimal availableProfit = maxPrice.subtract(upstreamPrice);
         BigDecimal expectedProfit = availableProfit.multiply(markupRate).add(fixedMarkup);
         BigDecimal profit = expectedProfit.min(availableProfit);
         return upstreamPrice.add(profit).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal defaultValue(BigDecimal value, BigDecimal fallback) {
-        return value == null ? fallback : value;
+    private BigDecimal requireNonNegative(BigDecimal value, String name) {
+        if (value == null || value.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException(name + " must be configured and cannot be negative");
+        }
+        return value;
     }
 }

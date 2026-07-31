@@ -1,0 +1,51 @@
+{
+  "api": "mtop.idle.web.trade.order.detail",
+  "ret": ["SUCCESS::调用成功"],
+  "orderInfoVO": {
+    "render": "orderInfoVO",
+    "data": {
+      "extInfoList": [],
+      "itemInfo": {
+        "buyAmount": "1",
+        "disableJump": false,
+        "itemMainPictCdnUrl": "https://example.test/item-001.jpg",
+        "jumpUrl": "fleamarket://awesome_detail?from=order_detail&itemId=ITEM_001",
+        "orderTagList": [],
+        "price": "1.00",
+        "title": "REDACTED_ITEM_TITLE"
+      },
+      "orderInfoList": [
+        { "copyable": true, "expanded": true, "needOutShow": true, "title": "订单编号", "value": "ORDER_001" },
+        {
+          "clickEvent": {
+            "data": { "url": "fleamarket://item?isSnapshot=true&orderId=ORDER_001&id=ITEM_001" },
+            "type": "openPage",
+            "utParam": { "arg1": "OrderSnap" }
+          },
+          "expanded": false,
+          "title": "交易快照",
+          "value": "发生交易争议时，可作为判断依据"
+        },
+        { "copyable": true, "expanded": false, "title": "支付宝交易号", "value": "ALIPAY_TRANSACTION_INVALID" },
+        { "expanded": false, "iconUrls": [], "title": "买家昵称", "value": "REDACTED_NICKNAME" },
+        { "expanded": false, "title": "下单时间", "value": "2026-07-29 20:26:27" },
+        { "expanded": false, "title": "付款时间", "value": "2026-07-29 20:37:35" }
+      ],
+      "priceInfo": {
+        "amount": {
+          "descRichText": [
+            { "fontSize": 12, "text": "（在支付宝担保账户中）", "textColor": "0xFFA3A3A3" }
+          ],
+          "expanded": true,
+          "title": "成交价",
+          "value": "0.01"
+        },
+        "billList": [
+          { "code": "ITEM_TOTAL_FEE", "expanded": true, "title": "商品总价", "value": "0.01" },
+          { "code": "POST_FEE", "expanded": true, "title": "运费", "value": "0.00" }
+        ],
+        "softwareServiceFeeList": []
+      }
+    }
+  }
+}

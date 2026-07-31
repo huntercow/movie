@@ -19,11 +19,18 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Entity
-public class Customer {
+@jakarta.persistence.EntityListeners(com.movie.ticket.shared.persistence.UserScopeEntityListener.class)
+public class Customer implements com.movie.ticket.shared.persistence.UserScopedEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "user_id")
+    private Long userId;
+
+    @jakarta.persistence.Version
+    private Long version;
 
     @Column(nullable = false, unique = true, length = 64)
     private String customerNo;

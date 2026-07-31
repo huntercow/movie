@@ -1,0 +1,9 @@
+{
+  "1": "CHAT_001@goofish", "2": 1,
+  "3": {
+    "extUserId": "BUYER_001", "extUserType": "0", "itemFeatures": "{\"idle_cat_leaf\":\"CATEGORY_001\"}", "itemId": "ITEM_001",
+    "itemMainPic": "https://example.test/item-001.jpg", "itemSellerId": "SELLER_001", "itemTitle": "REDACTED_ITEM_TITLE", "orderId": "ORDER_001",
+    "ownerUserId": "SELLER_001", "ownerUserType": "0", "squadId_SELLER_001": "ITEM_001", "squadId_BUYER_001": "CATEGORY_001",
+    "squadName_SELLER_001": "REDACTED_CATEGORY_NAME", "squadName_BUYER_001": "REDACTED_CATEGORY_NAME"
+  }, "4": 1785326880501
+}

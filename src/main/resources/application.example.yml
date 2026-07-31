@@ -5,16 +5,16 @@ spring:
   application:
     name: ticket-backend
   datasource:
-    url: jdbc:mysql://localhost:3306/movie_ticket?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: movie_ticket
-    password: change-me
+    url: ${DB_URL:jdbc:mysql://localhost:3306/movie_ticket?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:movie_ticket}
+    password: ${DB_PASSWORD:change-me}
     driver-class-name: com.mysql.cj.jdbc.Driver
   data:
     redis:
-      host: localhost
-      port: 6379
-      password:
-      database: 0
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
   jpa:
     database-platform: org.hibernate.dialect.MySQLDialect
     hibernate:
@@ -23,20 +23,35 @@ spring:
 
 ticket:
   upstream:
-    mock-enabled: true
+    mock-enabled: ${UPSTREAM_MOCK_ENABLED:true}
+    provider: "liangpiao-h5"
+    h5-base-url: "http://h5.liangpiao.net.cn"
     base-url: "http://business-api.liangpiao.net.cn"
     ocr-path: "/film/identify/filmIdentify"
     quote-path: "/film/order/officialQuotation"
     oss-region: "oss-cn-beijing"
     oss-bucket: "liangpiao-ticket-img"
-    oss-access-key-id: ""
-    oss-access-key-secret: ""
+    oss-access-key-id: ${OSS_ACCESS_KEY_ID:}
+    oss-access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
     oss-upload-dir: "ticket-img"
-    user-name: ""
-    password: ""
+    user-name: ${UPSTREAM_USERNAME:}
+    password: ${UPSTREAM_PASSWORD:}
     user-type-enum: "Consume"
-    auto-login: false
-    user-token: ""
+    connect-timeout: ${UPSTREAM_CONNECT_TIMEOUT:5s}
+    read-timeout: ${UPSTREAM_READ_TIMEOUT:20s}
+    max-image-size: ${UPSTREAM_MAX_IMAGE_SIZE:10MB}
+    auto-login: ${UPSTREAM_AUTO_LOGIN:false}
+    user-token: ${UPSTREAM_USER_TOKEN:}
   pricing:
     markup-rate: 0.10
     fixed-markup: 1.00
+  xianyu:
+    plugin-api-token: ${XIANYU_PLUGIN_API_TOKEN:}
+    auto-fulfillment-enabled: ${XIANYU_AUTO_FULFILLMENT_ENABLED:false}
+  admin:
+    api-token: ${ADMIN_API_TOKEN:}
+  bot:
+    api-token: ${BOT_API_TOKEN:}
+  security:
+    # Generate once with: openssl rand -base64 32
+    credential-encryption-key: ${CREDENTIAL_ENCRYPTION_KEY:}

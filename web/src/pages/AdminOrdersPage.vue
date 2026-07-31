@@ -1,0 +1,13 @@
+<script setup lang="ts">
+import { onMounted, ref } from "vue";
+import { ClipboardList, RefreshCw } from "lucide-vue-next";
+import { ElMessage } from "element-plus";
+import { api } from "../api";
+import { money, statusType } from "../format";
+import type { Order } from "../types";
+import { decodeArray, decodeOrder } from "../contracts";
+const rows = ref<Order[]>([]); const loading = ref(false);
+async function load() { loading.value = true; try { rows.value = await api("/api/v1/admin/orders", {}, decodeArray(decodeOrder)); } catch (e) { ElMessage.error(e instanceof Error ? e.message : "加载失败"); } finally { loading.value = false; } }
+onMounted(load);
+</script>
+<template><div class="page-stack"><div class="page-heading"><div><h1>全局订单</h1><p>管理员只读查看所有用户的订单和异常</p></div><el-button :icon="RefreshCw" circle title="刷新" @click="load" /></div><el-table v-loading="loading" :data="rows" class="desktop-data-table" empty-text="暂无订单"><el-table-column label="订单" min-width="210"><template #default="{row}"><div class="cell-stack"><strong>{{ row.orderNo }}</strong><small>{{ row.quoteNo }}</small></div></template></el-table-column><el-table-column prop="customerId" label="客户" min-width="140" /><el-table-column label="金额" width="105"><template #default="{row}">{{ money(row.totalPrice) }}</template></el-table-column><el-table-column prop="upstreamOrderNo" label="上游单号" min-width="180" /><el-table-column label="状态" min-width="150"><template #default="{row}"><el-tag :type="statusType(row.status)" effect="plain">{{ row.status }}</el-tag></template></el-table-column><el-table-column label="异常" min-width="240"><template #default="{row}"><span class="danger-text">{{ row.lastSubmitError || row.lastSyncError || '-' }}</span></template></el-table-column></el-table><div v-loading="loading" class="mobile-data-list"><article v-for="row in rows" :key="row.orderNo" class="mobile-data-card"><div class="mobile-card-head"><div><span class="mobile-card-icon blue"><ClipboardList :size="18" /></span><div><strong>{{ row.orderNo }}</strong><small>{{ row.quoteNo }}</small></div></div><el-tag :type="statusType(row.status)" effect="light">{{ row.status }}</el-tag></div><dl><div><dt>客户</dt><dd>{{ row.customerId }}</dd></div><div><dt>订单金额</dt><dd class="price-text">{{ money(row.totalPrice) }}</dd></div><div><dt>上游单号</dt><dd>{{ row.upstreamOrderNo || '-' }}</dd></div><div><dt>状态说明</dt><dd>{{ row.statusText }}</dd></div></dl><el-alert v-if="row.lastSubmitError || row.lastSyncError" :title="row.lastSubmitError || row.lastSyncError" type="error" :closable="false" /></article><div v-if="!rows.length && !loading" class="mobile-empty"><ClipboardList :size="24" /><span>暂无订单</span></div></div></div></template>

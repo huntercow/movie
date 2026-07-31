@@ -1,0 +1,20 @@
+CREATE TABLE job_task (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    user_id BIGINT NULL,
+    task_type VARCHAR(64) NOT NULL,
+    business_key VARCHAR(128) NOT NULL,
+    payload_json LONGTEXT NULL,
+    status VARCHAR(32) NOT NULL,
+    attempt_count INT NOT NULL DEFAULT 0,
+    next_run_at DATETIME(6) NOT NULL,
+    locked_by VARCHAR(128) NULL,
+    locked_until DATETIME(6) NULL,
+    last_error VARCHAR(2048) NULL,
+    created_at DATETIME(6) NOT NULL,
+    updated_at DATETIME(6) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_job_task_business (task_type, business_key),
+    KEY idx_job_task_ready (status, next_run_at),
+    KEY idx_job_task_user_created (user_id, created_at),
+    CONSTRAINT fk_job_task_user FOREIGN KEY (user_id) REFERENCES app_user (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

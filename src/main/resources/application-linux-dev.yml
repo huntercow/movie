@@ -1,0 +1,34 @@
+server:
+  address: 0.0.0.0
+  port: 8080
+
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/movie_ticket?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:movie_ticket}
+    password: ${DB_PASSWORD:change-me}
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+
+ticket:
+  upstream:
+    mock-enabled: true
+    provider: "liangpiao-h5"
+    h5-base-url: "http://h5.liangpiao.net.cn"
+    base-url: "http://business-api.liangpiao.net.cn"
+    connect-timeout: 5s
+    read-timeout: 20s
+    max-image-size: 10MB
+    auto-login: false
+    user-token: ""
+  xianyu:
+    plugin-api-token: "local-dev-token"
+    auto-fulfillment-enabled: false
+  admin:
+    api-token: "local-admin-token"
+  bot:
+    api-token: "local-bot-token"

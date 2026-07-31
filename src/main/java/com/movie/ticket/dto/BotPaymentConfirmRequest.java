@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 
 @Schema(description = "Bot or manual payment confirmation request")
 public record BotPaymentConfirmRequest(
-        @Schema(description = "Private WeChat user id", example = "wx_19934419145")
+        @Schema(description = "Private WeChat user id", example = "wx_13800138000")
         @NotBlank(message = "wechatId is required")
         String wechatId,
 
@@ -23,6 +23,7 @@ public record BotPaymentConfirmRequest(
         BigDecimal amount,
 
         @Schema(description = "WeChat transfer number or bot platform payment event id")
+        @NotBlank(message = "paymentNo is required for idempotency")
         String paymentNo,
 
         @Schema(description = "Payment proof image URL")

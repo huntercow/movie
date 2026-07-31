@@ -3,5 +3,7 @@ target/
 data/
 *.iml
 *.log
-*.yml
-!src/main/resources/application.example.yml
+src/main/resources/application.yml
+src/main/resources/application-*.local.yml
+web/node_modules/
+web/coverage/

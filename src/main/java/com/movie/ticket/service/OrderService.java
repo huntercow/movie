@@ -7,12 +7,13 @@ import com.movie.ticket.entity.QuoteStatus;
 import com.movie.ticket.entity.TicketOrder;
 import com.movie.ticket.entity.TicketQuote;
 import com.movie.ticket.exception.BusinessException;
+import com.movie.ticket.job.OrderJobService;
 import com.movie.ticket.repository.TicketOrderRepository;
 import com.movie.ticket.repository.TicketQuoteRepository;
+import com.movie.ticket.security.UserScopeContext;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -24,25 +25,50 @@ public class OrderService {
     private final QuoteService quoteService;
     private final TicketQuoteRepository quoteRepository;
     private final TicketOrderRepository orderRepository;
-    private final OrderSubmitService orderSubmitService;
+    private final OrderJobService orderJobService;
 
     public OrderService(
             QuoteService quoteService,
             TicketQuoteRepository quoteRepository,
             TicketOrderRepository orderRepository,
-            OrderSubmitService orderSubmitService
+            OrderJobService orderJobService
     ) {
         this.quoteService = quoteService;
         this.quoteRepository = quoteRepository;
         this.orderRepository = orderRepository;
-        this.orderSubmitService = orderSubmitService;
+        this.orderJobService = orderJobService;
     }
 
     @Transactional
     public OrderResponse createOrder(CreateOrderRequest request) {
-        TicketQuote quote = quoteService.requireQuote(request.quoteNo());
+        Long userId = UserScopeContext.get();
+        TicketOrder existingQuoteOrder = (userId == null
+                ? orderRepository.findByQuoteNo(request.quoteNo())
+                : orderRepository.findByUserIdAndQuoteNo(userId, request.quoteNo())).orElse(null);
+        if (existingQuoteOrder != null) {
+            if (!request.customerId().equals(existingQuoteOrder.getCustomerId())) {
+                throw new BusinessException("quote already belongs to another order customer");
+            }
+            return toResponse(existingQuoteOrder);
+        }
+        if (StringUtils.hasText(request.paymentNo())) {
+            TicketOrder existingOrder = (userId == null
+                    ? orderRepository.findByPaymentNo(request.paymentNo())
+                    : orderRepository.findByUserIdAndPaymentNo(userId, request.paymentNo())).orElse(null);
+            if (existingOrder != null) {
+                if (!request.quoteNo().equals(existingOrder.getQuoteNo())
+                        || !request.customerId().equals(existingOrder.getCustomerId())) {
+                    throw new BusinessException("payment reference already belongs to another order");
+                }
+                return toResponse(existingOrder);
+            }
+        }
+        TicketQuote quote = quoteService.requireQuoteForUpdate(request.quoteNo());
         if (quote.getStatus() != QuoteStatus.CREATED) {
             throw new BusinessException("quote status cannot create order");
+        }
+        if (StringUtils.hasText(quote.getCustomerId()) && !quote.getCustomerId().equals(request.customerId())) {
+            throw new BusinessException("quote does not belong to current customer");
         }
         TicketOrder order = new TicketOrder();
         order.setOrderNo(newOrderNo());
@@ -57,14 +83,40 @@ public class OrderService {
 
         quote.setStatus(QuoteStatus.ORDERED);
         quoteRepository.save(quote);
-        submitAfterCommit(order.getOrderNo());
+        orderJobService.enqueueOrderSubmit(order.getOrderNo());
         return toResponse(order);
     }
 
     public OrderResponse getOrder(String orderNo) {
-        return orderRepository.findByOrderNo(orderNo)
+        Long userId = UserScopeContext.get();
+        return (userId == null
+                ? orderRepository.findByOrderNo(orderNo)
+                : orderRepository.findByUserIdAndOrderNo(userId, orderNo))
                 .map(this::toResponse)
                 .orElseThrow(() -> new BusinessException("order not found"));
+    }
+
+    public java.util.Optional<OrderResponse> findOrderByQuoteNo(String quoteNo) {
+        Long userId = UserScopeContext.get();
+        return (userId == null
+                ? orderRepository.findByQuoteNo(quoteNo)
+                : orderRepository.findByUserIdAndQuoteNo(userId, quoteNo)).map(this::toResponse);
+    }
+
+    public java.util.List<OrderResponse> listCurrentUserOrders() {
+        Long userId = UserScopeContext.get();
+        if (userId == null) {
+            throw new BusinessException("user context is required");
+        }
+        return orderRepository.findTop100ByUserIdOrderByCreatedAtDesc(userId).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    public java.util.List<OrderResponse> listAllOrdersForAdmin() {
+        return orderRepository.findTop200ByOrderByCreatedAtDesc().stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     private OrderResponse toResponse(TicketOrder order) {
@@ -123,12 +175,4 @@ public class OrderService {
                 + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
     }
 
-    private void submitAfterCommit(String orderNo) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                orderSubmitService.submitAsync(orderNo);
-            }
-        });
-    }
 }

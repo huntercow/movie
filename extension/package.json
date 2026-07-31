@@ -1,0 +1,17 @@
+{
+  "name": "xianyu-movie-ticket-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "build": "vite build && node scripts/copy-static.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-legacy": "^5.4.3",
+    "msgpack-lite": "0.1.26",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  }
+}

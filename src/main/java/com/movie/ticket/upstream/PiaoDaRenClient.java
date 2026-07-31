@@ -11,6 +11,7 @@ import com.aliyun.oss.model.PutObjectResult;
 import com.movie.ticket.config.UpstreamProperties;
 import com.movie.ticket.dto.MovieTicketInfo;
 import com.movie.ticket.exception.BusinessException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -29,11 +30,11 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 @Component
 @ConditionalOnProperty(prefix = "ticket.upstream", name = "mock-enabled", havingValue = "false")
+@ConditionalOnExpression("'${ticket.upstream.provider:piaodaren}' == 'piaodaren'")
 public class PiaoDaRenClient implements TicketUpstreamClient {
 
     private final RestClient restClient;
@@ -50,11 +51,12 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
 
     @Override
     public UploadedImage uploadImage(String imageBase64) {
-        byte[] imageBytes = java.util.Base64.getDecoder().decode(stripBase64Prefix(imageBase64));
-        String region = defaultText(properties.ossRegion(), "oss-cn-beijing");
-        String bucketName = defaultText(properties.ossBucket(), "liangpiao-ticket-img");
-        String uploadDir = defaultText(properties.ossUploadDir(), "ticket-img").replaceAll("^/+|/+$", "");
-        String objectName = uploadDir + "/" + UUID.randomUUID().toString().replace("-", "") + ".jpg";
+        DecodedImage image = decodeImage(imageBase64);
+        String region = requireText(properties.ossRegion(), "missing oss region");
+        String bucketName = requireText(properties.ossBucket(), "missing oss bucket");
+        String uploadDir = requireText(properties.ossUploadDir(), "missing oss upload directory")
+                .replaceAll("^/+|/+$", "");
+        String objectName = uploadDir + "/" + UUID.randomUUID().toString().replace("-", "") + image.extension();
         String endpoint = "https://" + region + ".aliyuncs.com";
 
         OSS ossClient = new OSSClientBuilder().build(
@@ -64,9 +66,14 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         );
         try {
             ObjectMetadata metadata = new ObjectMetadata();
-            metadata.setContentType(MediaType.IMAGE_JPEG_VALUE);
-            metadata.setContentLength(imageBytes.length);
-            PutObjectResult result = ossClient.putObject(bucketName, objectName, new java.io.ByteArrayInputStream(imageBytes), metadata);
+            metadata.setContentType(image.contentType());
+            metadata.setContentLength(image.bytes().length);
+            PutObjectResult result = ossClient.putObject(
+                    bucketName,
+                    objectName,
+                    new java.io.ByteArrayInputStream(image.bytes()),
+                    metadata
+            );
             if (!StringUtils.hasText(result.getRequestId())) {
                 throw new BusinessException("oss upload failed: missing request id");
             }
@@ -91,31 +98,33 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         BigDecimal maxPrice = extractMaxSeatPrice(discern.get("seats"));
 
 
-        return new MovieTicketInfo(
-                stringValue(ocrData.get("taskId")),
-                stringValue(discern.get("province")),
-                stringValue(discern.get("city")),
-                stringValue(discern.get("area")),
-                stringValue(discern.get("cityCode")),
-                stringValue(discern.get("cinemaId")),
-                stringValue(discern.get("cinemaCode")),
-                stringValue(discern.get("cinemaAddress")),
-                stringValue(discern.get("filmId")),
-                stringValue(discern.get("filmImg")),
-                intValue(discern.get("customFilmType")),
-                stringValue(discern.get("showId")),
-                stringValue(discern.get("filmName")),
-                stringValue(discern.get("cinemaName")),
+        MovieTicketInfo ticketInfo = new MovieTicketInfo(
+                optionalString(ocrData, "taskId", "OCR data"),
+                optionalString(discern, "province", "OCR discern"),
+                optionalString(discern, "city", "OCR discern"),
+                optionalString(discern, "area", "OCR discern"),
+                optionalString(discern, "cityCode", "OCR discern"),
+                optionalString(discern, "cinemaId", "OCR discern"),
+                optionalString(discern, "cinemaCode", "OCR discern"),
+                optionalString(discern, "cinemaAddress", "OCR discern"),
+                optionalString(discern, "filmId", "OCR discern"),
+                optionalString(discern, "filmImg", "OCR discern"),
+                optionalInteger(discern, "customFilmType", "OCR discern"),
+                requiredString(discern, "showId", "OCR discern"),
+                optionalString(discern, "filmName", "OCR discern"),
+                optionalString(discern, "cinemaName", "OCR discern"),
                 parseShowTime(discern.get("showTime")),
-                stringValue(discern.get("hallName")),
-                stringValue(discern.get("planType")),
-                seats.isEmpty() ? null : seats.size(),
+                optionalString(discern, "hallName", "OCR discern"),
+                optionalString(discern, "planType", "OCR discern"),
+                seats.size(),
                 seats,
                 seatsAndPrice,
                 maxPrice == null ? null : maxPrice.toPlainString(),
                 centsToYuanText(discern.get("totalImagePrice")),
-                defaultText(stringValue(ocrData.get("imageUrl")), imageUrl)
+                requiredString(ocrData, "imageUrl", "OCR data")
         );
+        validateRecognizedTicket(ticketInfo);
+        return ticketInfo;
     }
 
     @Override
@@ -130,8 +139,8 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         OfficialQuoteResult selected = results.stream()
                 .filter(result -> result.price().compareTo(BigDecimal.ZERO) > 0)
                 .max(java.util.Comparator.comparing(OfficialQuoteResult::price))
-                .orElseThrow(() -> new BusinessException("missing valid price from upstream quotation"));
-        return new UpstreamQuote(selected.price(), selected.taskId(), selected.channel(), results.toString());
+                .orElseThrow(() -> new BusinessException("upstream quotation returned no positive price"));
+        return new UpstreamQuote(selected.price(), selected.taskId(), selected.channel(), toJson(results));
     }
 
     @Override
@@ -143,10 +152,13 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
             throw new BusinessException("missing show id");
         }
         Map<String, Object> body = new HashMap<>();
-        body.put("userId", defaultText(command.userId(), ""));
-        body.put("userName", defaultText(command.userName(), ""));
+        body.put("userId", requireText(command.userId(), "missing upstream user id"));
+        body.put("userName", requireText(command.userName(), "missing upstream user name"));
         body.put("showId", command.showId());
-        body.put("seats", Optional.ofNullable(command.seats()).orElse(List.of()).stream().map(this::parseSeatName).toList());
+        if (command.seats() == null || command.seats().isEmpty()) {
+            throw new BusinessException("missing seats for upstream order");
+        }
+        body.put("seats", command.seats().stream().map(this::parseSeatName).toList());
         body.put("channel", 3);
         body.put("orderType", 1);
         body.put("changeSeat", 1);
@@ -161,12 +173,8 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
 
         Map<?, ?> response = postJson("/film/order/officialSubmitOrder", body);
         Map<?, ?> data = extractDataMap(response);
-        String orderNumber = stringValue(data.get("orderNumber"));
-        String orderId = firstText(data.get("orderId"), data.get("id"));
-        if (!StringUtils.hasText(orderNumber)) {
-            throw new BusinessException("missing upstream order number");
-        }
-        return new UpstreamSubmitOrderResult(orderId, orderNumber, body.toString(), response.toString());
+        String orderNumber = requiredString(data, "orderNumber", "upstream submit data");
+        return new UpstreamSubmitOrderResult(null, orderNumber, toJson(body), toJson(response));
     }
 
     @Override
@@ -176,8 +184,8 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         }
         String body = "orderNumber=" + URLEncoder.encode(orderNumber, StandardCharsets.UTF_8);
         Map<?, ?> response = postForm("/film/order/payOrder", body);
-        extractDataMapAllowEmpty(response);
-        return new UpstreamPayOrderResult(orderNumber, body, response.toString());
+        validateSuccessResponse(response);
+        return new UpstreamPayOrderResult(orderNumber, body, toJson(response));
     }
 
     @Override
@@ -187,8 +195,8 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         }
         String body = "orderId=" + URLEncoder.encode(orderId, StandardCharsets.UTF_8);
         Map<?, ?> response = postForm("/film/order/cancelOrder", body);
-        extractDataMapAllowEmpty(response);
-        return new UpstreamCancelOrderResult(orderId, body, response.toString());
+        validateSuccessResponse(response);
+        return new UpstreamCancelOrderResult(orderId, body, toJson(response));
     }
 
     @Override
@@ -202,96 +210,81 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
                         + URLEncoder.encode(orderNumber, StandardCharsets.UTF_8))
                 .headers(headers -> headers.addAll(defaultHeaders(MediaType.APPLICATION_FORM_URLENCODED_VALUE)))
                 .retrieve()
+                .onStatus(status -> status.isError(), (request, upstreamResponse) ->
+                        handleHttpError(upstreamResponse.getStatusCode().value()))
                 .body(Map.class);
         Map<?, ?> data = extractDataMap(response);
         Map<?, ?> orderInfo = extractOrderInfoMap(data);
-        String orderId = stringValue(orderInfo.get("id"));
-        if (!StringUtils.hasText(orderId)) {
-            throw new BusinessException("missing orderInfo.id from upstream detail");
-        }
+        String orderId = requiredString(orderInfo, "id", "upstream orderInfo");
         return new UpstreamOrderDetailResult(
                 orderId,
                 orderNumber,
-                intValue(orderInfo.get("orderStatus")),
+                requiredInteger(orderInfo, "orderStatus", "upstream orderInfo"),
                 buildTicketCodeInfo(data.get("ticketInfo")),
                 firstText(
                         data.get("failedReason"),
                         data.get("refundReason"),
-                        data.get("cancelReason"),
-                        orderInfo.get("failedReason"),
-                        orderInfo.get("refundReason"),
-                        orderInfo.get("cancelReason")
+                        data.get("cancelReason")
                 ),
                 toJson(response)
         );
     }
 
     private OfficialQuoteResult requestOfficialQuote(MovieTicketInfo ticketInfo, String channel) {
-        try {
-            Map<String, Object> body = new HashMap<>();
-            body.put("showId", ticketInfo.showId());
-            body.put("netPrice", toCents(ticketInfo.maxPrice()));
-            body.put("seatCount", Optional.ofNullable(ticketInfo.seatCount()).orElse(1));
-            body.put("seatName", Optional.ofNullable(ticketInfo.seats()).orElse(List.of()));
-            body.put("quotationChannels", List.of(channel));
-
-            Map<?, ?> response = postJson(properties.quotePath(), body);
-            Map<?, ?> data = extractDataMap(response);
-            BigDecimal price = officialPriceForChannel(data, channel);
-            return new OfficialQuoteResult(
-                    channel,
-                    defaultPrice(price),
-                    defaultPrice(centsToYuan(data.get("fixPrice"))),
-                    defaultPrice(centsToYuan(data.get("limitPrice"))),
-                    defaultPrice(centsToYuan(data.get("commercePrice"))),
-                    stringValue(data.get("taskId")),
-                    true,
-                    response.toString()
-            );
-        } catch (Exception exception) {
-            return new OfficialQuoteResult(
-                    channel,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    BigDecimal.ZERO,
-                    null,
-                    false,
-                    exception.getMessage()
-            );
+        if (ticketInfo.seatCount() == null || ticketInfo.seatCount() <= 0) {
+            throw new BusinessException("invalid seat count for upstream quotation");
         }
+        if (ticketInfo.seats() == null || ticketInfo.seats().isEmpty()) {
+            throw new BusinessException("missing seats for upstream quotation");
+        }
+        Map<String, Object> body = new HashMap<>();
+        body.put("showId", ticketInfo.showId());
+        body.put("netPrice", toCents(ticketInfo.maxPrice()));
+        body.put("seatCount", ticketInfo.seatCount());
+        body.put("seatName", ticketInfo.seats());
+        body.put("quotationChannels", List.of(channel));
+
+        Map<?, ?> response = postJson(properties.quotePath(), body);
+        Map<?, ?> data = extractDataMap(response);
+        BigDecimal price = officialPriceForChannel(data, channel);
+        return new OfficialQuoteResult(
+                channel,
+                price,
+                requiredString(data, "taskId", "upstream quotation data"),
+                toJson(response)
+        );
     }
 
     private BigDecimal officialPriceForChannel(Map<?, ?> data, String channel) {
         return switch (channel) {
-            case "LIMIT_PRICE" -> centsToYuan(data.get("limitPrice"));
-            case "FIX_PRICE" -> centsToYuan(data.get("fixPrice"));
-            case "COMMERCE_PRICE" -> centsToYuan(data.get("commercePrice"));
-            default -> BigDecimal.ZERO;
+            case "LIMIT_PRICE" -> requiredCentsToYuan(data.get("limitPrice"), "quotation limitPrice");
+            case "FIX_PRICE" -> requiredCentsToYuan(data.get("fixPrice"), "quotation fixPrice");
+            case "COMMERCE_PRICE" -> requiredCentsToYuan(data.get("commercePrice"), "quotation commercePrice");
+            default -> throw new BusinessException("unsupported quotation channel: " + channel);
         };
     }
 
     private Map<String, Object> parseSeatName(String seatName) {
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(\\d+)排(\\d+)座").matcher(defaultText(seatName, ""));
-        if (matcher.find()) {
-            return Map.of(
-                    "row", Integer.parseInt(matcher.group(1)),
-                    "col", Integer.parseInt(matcher.group(2)),
-                    "seatName", seatName
-            );
+        String requiredSeatName = requireText(seatName, "seat name is required");
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("^(\\d+)排(\\d+)座$").matcher(requiredSeatName);
+        if (!matcher.matches()) {
+            throw new BusinessException("unsupported seat name format: " + requiredSeatName);
         }
-        return Map.of("row", 1, "col", 1, "seatName", defaultText(seatName, ""));
+        return Map.of(
+                "row", Integer.parseInt(matcher.group(1)),
+                "col", Integer.parseInt(matcher.group(2)),
+                "seatName", requiredSeatName
+        );
     }
 
     private int officialQuotationChannelCode(String channel) {
         if ("FIX_PRICE".equals(channel)) {
             return 2;
         }
-        return 1;
-    }
-
-    private BigDecimal defaultPrice(BigDecimal price) {
-        return price == null ? BigDecimal.ZERO : price;
+        if ("LIMIT_PRICE".equals(channel)) {
+            return 1;
+        }
+        throw new BusinessException("unsupported official quotation channel: " + channel);
     }
 
     private Map<?, ?> postJson(String path, Object body) {
@@ -300,6 +293,8 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
                 .headers(headers -> headers.addAll(defaultHeaders(MediaType.APPLICATION_JSON_VALUE)))
                 .body(body)
                 .retrieve()
+                .onStatus(status -> status.isError(), (request, upstreamResponse) ->
+                        handleHttpError(upstreamResponse.getStatusCode().value()))
                 .body(Map.class);
     }
 
@@ -309,6 +304,8 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
                 .headers(headers -> headers.addAll(defaultHeaders(MediaType.APPLICATION_FORM_URLENCODED_VALUE)))
                 .body(body)
                 .retrieve()
+                .onStatus(status -> status.isError(), (request, upstreamResponse) ->
+                        handleHttpError(upstreamResponse.getStatusCode().value()))
                 .body(Map.class);
     }
 
@@ -319,46 +316,69 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         headers.add("Origin", "http://h5.liangpiao.net.cn");
         headers.add("Referer", "http://h5.liangpiao.net.cn/");
         headers.add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/132.0.0.0 Safari/537.36");
-        headers.add("user-token", session.getUserToken(properties.userToken()));
+        headers.add("user-token", requireText(
+                resolveUserToken(),
+                "upstream login required"
+        ));
         return headers;
     }
 
-    private Map<?, ?> extractDataMap(Map<?, ?> response) {
-        if (response == null) {
-            throw new BusinessException("empty upstream response");
+    private String resolveUserToken() {
+        String sessionToken = session.getUserToken();
+        if (StringUtils.hasText(sessionToken)) {
+            return sessionToken;
         }
-        String state = stringValue(response.get("state"));
-        if (!"200".equals(state)) {
-            throw new BusinessException("upstream error: " + messageFrom(response));
+        if (com.movie.ticket.security.UserScopeContext.get() == null
+                && StringUtils.hasText(properties.userToken())) {
+            return properties.userToken();
         }
-        Object result = response.get("result");
-        if (result != null && !Boolean.parseBoolean(String.valueOf(result))) {
-            throw new BusinessException("upstream failed: " + messageFrom(response));
-        }
-        Object data = response.get("data");
-        if (data instanceof Map<?, ?> dataMap) {
-            return dataMap;
-        }
-        throw new BusinessException("upstream response missing data");
+        return null;
     }
 
-    private Map<?, ?> extractDataMapAllowEmpty(Map<?, ?> response) {
-        if (response == null) {
-            throw new BusinessException("empty upstream response");
+    private void handleHttpError(int status) {
+        if (status == 401) {
+            session.clear();
+            throw new BusinessException("upstream authentication expired; login again");
         }
-        String state = stringValue(response.get("state"));
-        if (!"200".equals(state)) {
-            throw new BusinessException("upstream error: " + messageFrom(response));
-        }
-        Object result = response.get("result");
-        if (result != null && !Boolean.parseBoolean(String.valueOf(result))) {
-            throw new BusinessException("upstream failed: " + messageFrom(response));
-        }
+        throw new BusinessException("upstream HTTP request failed with status " + status);
+    }
+
+    private Map<?, ?> extractDataMap(Map<?, ?> response) {
+        validateSuccessResponse(response);
         Object data = response.get("data");
         if (data instanceof Map<?, ?> dataMap) {
             return dataMap;
         }
-        return Map.of();
+        throw new BusinessException("upstream response data must be a JSON object");
+    }
+
+    private void validateSuccessResponse(Map<?, ?> response) {
+        if (response == null) {
+            throw new BusinessException("empty upstream response");
+        }
+        int state = requiredState(response);
+        if (state != 200) {
+            throw new BusinessException("upstream returned state " + state + ": " + requiredErrorMessage(response));
+        }
+    }
+
+    private int requiredState(Map<?, ?> response) {
+        Object value = response.get("state");
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text && text.matches("\\d{3}")) {
+            return Integer.parseInt(text);
+        }
+        throw new BusinessException("upstream response state must be a three-digit number");
+    }
+
+    private String requiredErrorMessage(Map<?, ?> response) {
+        Object value = response.get("message");
+        if (value instanceof String message && StringUtils.hasText(message)) {
+            return message;
+        }
+        throw new BusinessException("upstream error response is missing message");
     }
 
     private Map<?, ?> extractDiscernMap(Map<?, ?> data) {
@@ -378,98 +398,98 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
     }
 
     private String buildTicketCodeInfo(Object ticketInfoValue) {
+        if (ticketInfoValue == null) {
+            return null;
+        }
+        if (!(ticketInfoValue instanceof List<?> ticketInfo)) {
+            throw new BusinessException("upstream ticketInfo must be a JSON array");
+        }
         List<Map<String, String>> ticketItems = new ArrayList<>();
-        if (ticketInfoValue instanceof List<?> ticketInfo) {
-            for (Object item : ticketInfo) {
-                if (item instanceof Map<?, ?> itemMap) {
-                    String ticket = firstText(
-                            itemMap.get("ticket"),
-                            itemMap.get("ticketCodeOriginImage"),
-                            itemMap.get("ticketImg"),
-                            itemMap.get("imageUrl")
-                    );
-                    String ticketCode = firstText(
-                            itemMap.get("ticketCode"),
-                            itemMap.get("code"),
-                            itemMap.get("ticketNo")
-                    );
-                    if (StringUtils.hasText(ticket) || StringUtils.hasText(ticketCode)) {
-                        Map<String, String> ticketItem = new LinkedHashMap<>();
-                        ticketItem.put("ticket", ticket);
-                        ticketItem.put("ticketCode", ticketCode);
-                        ticketItems.add(ticketItem);
-                    }
-                }
+        for (Object item : ticketInfo) {
+            if (!(item instanceof Map<?, ?> itemMap)) {
+                throw new BusinessException("upstream ticketInfo item must be a JSON object");
             }
+            String ticket = optionalString(itemMap, "ticket", "upstream ticketInfo item");
+            String ticketCode = optionalString(itemMap, "ticketCode", "upstream ticketInfo item");
+            if (!StringUtils.hasText(ticket) && !StringUtils.hasText(ticketCode)) {
+                throw new BusinessException("upstream ticketInfo item must contain ticket or ticketCode");
+            }
+            Map<String, String> ticketItem = new LinkedHashMap<>();
+            ticketItem.put("ticket", ticket);
+            ticketItem.put("ticketCode", ticketCode);
+            ticketItems.add(ticketItem);
         }
         return toJson(Map.of("ticketItems", ticketItems));
     }
 
     private List<String> extractSeatNames(Object seatsValue) {
+        if (!(seatsValue instanceof List<?> seats) || seats.isEmpty()) {
+            throw new BusinessException("OCR discern seats must be a non-empty JSON array");
+        }
         List<String> seatNames = new ArrayList<>();
-        if (seatsValue instanceof List<?> seats) {
-            for (Object seat : seats) {
-                if (seat instanceof Map<?, ?> seatMap && StringUtils.hasText(stringValue(seatMap.get("seatName")))) {
-                    seatNames.add(stringValue(seatMap.get("seatName")));
-                }
+        for (Object seat : seats) {
+            if (!(seat instanceof Map<?, ?> seatMap)) {
+                throw new BusinessException("OCR seat must be a JSON object");
             }
+            seatNames.add(requiredString(seatMap, "seatName", "OCR seat"));
         }
         return seatNames;
     }
 
     private Map<String, String> extractSeatsAndPrice(Object seatsValue) {
+        if (!(seatsValue instanceof List<?> seats) || seats.isEmpty()) {
+            throw new BusinessException("OCR discern seats must be a non-empty JSON array");
+        }
         Map<String, String> seatsAndPrice = new LinkedHashMap<>();
-        if (seatsValue instanceof List<?> seats) {
-            for (Object seat : seats) {
-                if (seat instanceof Map<?, ?> seatMap) {
-                    String seatName = stringValue(seatMap.get("seatName"));
-                    BigDecimal seatPrice = centsToYuan(seatMap.get("seatPrice"));
-                    if (StringUtils.hasText(seatName) && seatPrice != null) {
-                        seatsAndPrice.put(seatName, seatPrice.toPlainString());
-                    }
-                }
+        for (Object seat : seats) {
+            if (!(seat instanceof Map<?, ?> seatMap)) {
+                throw new BusinessException("OCR seat must be a JSON object");
             }
+            String seatName = requiredString(seatMap, "seatName", "OCR seat");
+            BigDecimal seatPrice = requiredCentsToYuan(seatMap.get("seatPrice"), "OCR seatPrice");
+            seatsAndPrice.put(seatName, seatPrice.toPlainString());
         }
         return seatsAndPrice;
     }
 
     private BigDecimal extractMaxSeatPrice(Object seatsValue) {
+        if (!(seatsValue instanceof List<?> seats) || seats.isEmpty()) {
+            throw new BusinessException("OCR discern seats must be a non-empty JSON array");
+        }
         BigDecimal maxPrice = null;
-        if (seatsValue instanceof List<?> seats) {
-            for (Object seat : seats) {
-                if (seat instanceof Map<?, ?> seatMap) {
-                    BigDecimal seatPrice = centsToYuan(seatMap.get("seatPrice"));
-                    if (seatPrice != null && (maxPrice == null || seatPrice.compareTo(maxPrice) > 0)) {
-                        maxPrice = seatPrice;
-                    }
-                }
+        for (Object seat : seats) {
+            if (!(seat instanceof Map<?, ?> seatMap)) {
+                throw new BusinessException("OCR seat must be a JSON object");
+            }
+            BigDecimal seatPrice = requiredCentsToYuan(seatMap.get("seatPrice"), "OCR seatPrice");
+            if (maxPrice == null || seatPrice.compareTo(maxPrice) > 0) {
+                maxPrice = seatPrice;
             }
         }
         return maxPrice;
     }
 
     private LocalDateTime parseShowTime(Object showTimeValue) {
-        if (showTimeValue == null) {
-            return null;
+        if (!(showTimeValue instanceof Number timestamp)) {
+            throw new BusinessException("OCR showTime must be a numeric timestamp");
         }
-        try {
-            long timestamp = Long.parseLong(String.valueOf(showTimeValue));
-            return LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp), ZoneId.systemDefault());
-        } catch (NumberFormatException exception) {
-            return null;
-        }
+        return LocalDateTime.ofInstant(Instant.ofEpochMilli(timestamp.longValue()), ZoneId.systemDefault());
     }
 
     private String toCents(String yuan) {
         if (!StringUtils.hasText(yuan)) {
-            return "0";
+            throw new BusinessException("yuan amount is required");
         }
-        return new BigDecimal(yuan).multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP).toPlainString();
+        try {
+            return new BigDecimal(yuan).multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP).toPlainString();
+        } catch (NumberFormatException exception) {
+            throw new BusinessException("yuan amount is invalid", exception);
+        }
     }
 
     private int toCents(BigDecimal yuan) {
         if (yuan == null) {
-            return 0;
+            throw new BusinessException("yuan amount is required");
         }
         return yuan.multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP).intValue();
     }
@@ -478,7 +498,14 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         if (cents == null) {
             return null;
         }
-        return new BigDecimal(String.valueOf(cents)).divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+        return requiredCentsToYuan(cents, "upstream amount");
+    }
+
+    private BigDecimal requiredCentsToYuan(Object cents, String field) {
+        if (!(cents instanceof Number number)) {
+            throw new BusinessException(field + " must be numeric cents");
+        }
+        return new BigDecimal(number.toString()).divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
     }
 
     private String centsToYuanText(Object cents) {
@@ -486,9 +513,62 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         return yuan == null ? null : yuan.toPlainString();
     }
 
-    private String stripBase64Prefix(String imageBase64) {
-        int commaIndex = imageBase64.indexOf(',');
-        return commaIndex >= 0 ? imageBase64.substring(commaIndex + 1) : imageBase64;
+    private DecodedImage decodeImage(String imageBase64) {
+        if (!StringUtils.hasText(imageBase64)) {
+            throw new BusinessException("ticket image is empty");
+        }
+        String contentType = MediaType.IMAGE_JPEG_VALUE;
+        String extension = ".jpg";
+        String encoded = imageBase64;
+        if (imageBase64.startsWith("data:")) {
+            int commaIndex = imageBase64.indexOf(',');
+            if (commaIndex < 0 || !imageBase64.substring(0, commaIndex).endsWith(";base64")) {
+                throw new BusinessException("ticket image data URL must use base64 encoding");
+            }
+            contentType = imageBase64.substring("data:".length(), imageBase64.indexOf(';'));
+            extension = switch (contentType) {
+                case MediaType.IMAGE_JPEG_VALUE -> ".jpg";
+                case MediaType.IMAGE_PNG_VALUE -> ".png";
+                case "image/webp" -> ".webp";
+                default -> throw new BusinessException("unsupported ticket image type: " + contentType);
+            };
+            encoded = imageBase64.substring(commaIndex + 1);
+        }
+        byte[] bytes;
+        try {
+            bytes = java.util.Base64.getDecoder().decode(encoded);
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException("ticket image is not valid base64");
+        }
+        if (bytes.length == 0) {
+            throw new BusinessException("ticket image is empty");
+        }
+        if (properties.maxImageSize() == null || properties.maxImageSize().toBytes() <= 0) {
+            throw new BusinessException("upstream maximum image size must be configured and positive");
+        }
+        long maxBytes = properties.maxImageSize().toBytes();
+        if (bytes.length > maxBytes) {
+            throw new BusinessException("ticket image exceeds maximum size of " + maxBytes + " bytes");
+        }
+        return new DecodedImage(bytes, contentType, extension);
+    }
+
+    private void validateRecognizedTicket(MovieTicketInfo ticketInfo) {
+        if (!StringUtils.hasText(ticketInfo.showId())) {
+            throw new BusinessException("OCR result missing showId");
+        }
+        if (ticketInfo.seats() == null || ticketInfo.seats().isEmpty()) {
+            throw new BusinessException("OCR result missing seats");
+        }
+        BigDecimal maxPrice;
+        try {
+            maxPrice = new BigDecimal(ticketInfo.maxPrice());
+        } catch (NumberFormatException exception) {
+            throw new BusinessException("OCR result has invalid max price", exception);
+        }
+        if (maxPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("OCR result has invalid max price");
+        }
     }
 
     private String requireText(String value, String message) {
@@ -498,18 +578,31 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         return value;
     }
 
-    private String defaultText(String value, String fallback) {
-        return StringUtils.hasText(value) ? value : fallback;
+    private String requiredString(Map<?, ?> source, String field, String context) {
+        String value = optionalString(source, field, context);
+        if (!StringUtils.hasText(value)) {
+            throw new BusinessException(context + " is missing " + field);
+        }
+        return value;
     }
 
-    private String stringValue(Object value) {
-        return value == null ? null : String.valueOf(value);
+    private String optionalString(Map<?, ?> source, String field, String context) {
+        Object value = source.get(field);
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof String text)) {
+            throw new BusinessException(context + " field " + field + " must be a string");
+        }
+        return text;
     }
 
     private String firstText(Object... values) {
         for (Object value : values) {
-            String text = stringValue(value);
-            if (StringUtils.hasText(text)) {
+            if (value != null && !(value instanceof String)) {
+                throw new BusinessException("upstream reason field must be a string");
+            }
+            if (value instanceof String text && StringUtils.hasText(text)) {
                 return text;
             }
         }
@@ -520,35 +613,41 @@ public class PiaoDaRenClient implements TicketUpstreamClient {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException exception) {
-            return String.valueOf(value);
+            throw new BusinessException("unable to serialize upstream payload", exception);
         }
     }
 
-    private Integer intValue(Object value) {
+    private Integer optionalInteger(Map<?, ?> source, String field, String context) {
+        Object value = source.get(field);
         if (value == null) {
             return null;
         }
-        try {
-            return Integer.valueOf(String.valueOf(value));
-        } catch (NumberFormatException exception) {
-            return null;
+        if (!(value instanceof Number number)) {
+            throw new BusinessException(context + " field " + field + " must be an integer");
         }
+        return number.intValue();
     }
 
-    private String messageFrom(Map<?, ?> response) {
-        Object message = response.get("message");
-        return message == null ? response.toString() : String.valueOf(message);
+    private Integer requiredInteger(Map<?, ?> source, String field, String context) {
+        Integer value = optionalInteger(source, field, context);
+        if (value == null) {
+            throw new BusinessException(context + " is missing " + field);
+        }
+        return value;
     }
 
     private record OfficialQuoteResult(
             String channel,
             BigDecimal price,
-            BigDecimal fixPrice,
-            BigDecimal limitPrice,
-            BigDecimal commercePrice,
             String taskId,
-            boolean upstreamOk,
             String raw
+    ) {
+    }
+
+    private record DecodedImage(
+            byte[] bytes,
+            String contentType,
+            String extension
     ) {
     }
 }

@@ -1,0 +1,1645 @@
+openapi: 3.0.3
+info:
+  title: 电影票后端联调 API
+  version: 0.2.0
+  license:
+    name: Proprietary
+  description: |
+    闲鱼插件、微信机器人、管理端与良票上游联调接口。
+
+    鉴权分为三组：闲鱼接口使用 `X-Plugin-Token`，微信机器人接口使用
+    `X-Bot-Token`，报价、订单和上游管理接口使用 `X-Admin-Token`。
+
+    带有“高风险”字样的接口可能创建真实订单、提交上游或支付。手动测试前请确认
+    `ticket.upstream.mock-enabled` 与 `ticket.xianyu.auto-fulfillment-enabled` 的配置。
+servers:
+  - url: http://127.0.0.1:8080
+    description: 本地开发环境
+tags:
+  - name: 1. 上游安全检查
+    description: 良票登录、状态及只读探测，不创建订单
+  - name: 2. 报价管理
+    description: OCR 与报价管理接口
+  - name: 3. 订单管理（高风险）
+    description: 管理端订单创建、提交与同步接口，可能触发真实上游操作
+  - name: 4. 闲鱼插件
+    description: 闲鱼图片报价、订单履约、发货与配置接口
+  - name: 5. 微信机器人
+    description: 为微信机器人预留的报价、收款、创建订单与轮询接口
+
+paths:
+  /api/upstream/piaodaren/status:
+    get:
+      tags: [1. 上游安全检查]
+      summary: 查询良票登录状态（安全）
+      operationId: getPiaoDaRenStatus
+      security:
+        - adminToken: []
+      responses:
+        '200':
+          $ref: '#/components/responses/PiaoDaRenStatusOk'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/upstream/piaodaren/smoke:
+    get:
+      tags: [1. 上游安全检查]
+      summary: 执行良票联调冒烟检查（安全）
+      description: 只检查配置、登录态和可执行动作，不创建订单或支付。
+      operationId: smokeCheckPiaoDaRen
+      security:
+        - adminToken: []
+      responses:
+        '200':
+          $ref: '#/components/responses/PiaoDaRenSmokeOk'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/upstream/piaodaren/login:
+    post:
+      tags: [1. 上游安全检查]
+      summary: 使用请求中的账号登录良票
+      description: 会访问真实登录接口，但不会创建订单或支付。不要把真实密码保存到共享 ApiFox 环境。
+      operationId: loginPiaoDaRen
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PiaoDaRenLoginRequest'
+            example:
+              userName: '{{upstreamUsername}}'
+              password: '{{upstreamPassword}}'
+              userTypeEnum: Consume
+      responses:
+        '200':
+          $ref: '#/components/responses/PiaoDaRenLoginOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/upstream/piaodaren/login/configured:
+    post:
+      tags: [1. 上游安全检查]
+      summary: 使用后端已配置账号登录良票
+      description: 会访问真实登录接口，但不会创建订单或支付。
+      operationId: loginConfiguredPiaoDaRen
+      security:
+        - adminToken: []
+      responses:
+        '200':
+          $ref: '#/components/responses/PiaoDaRenLoginOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/upstream/piaodaren/h5/probe:
+    get:
+      tags: [1. 上游安全检查]
+      summary: 探测良票 H5 首页（安全）
+      description: 只读取 H5 首页并返回标题和正文长度。
+      operationId: probePiaoDaRenH5
+      security:
+        - adminToken: []
+      responses:
+        '200':
+          $ref: '#/components/responses/H5ProbeOk'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/quotes:
+    post:
+      tags: [2. 报价管理]
+      summary: 根据票务截图创建报价
+      description: 可能调用真实 OCR、上传图片及询价，但不会创建订单或支付。
+      operationId: createQuote
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQuoteRequest'
+            example:
+              imageBase64: '{{ticketImageBase64}}'
+              customerId: apifox-customer-001
+              channel: GOOFISH
+      responses:
+        '200':
+          $ref: '#/components/responses/QuoteOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/quotes/{quoteNo}:
+    get:
+      tags: [2. 报价管理]
+      summary: 查询报价
+      operationId: getQuote
+      security:
+        - adminToken: []
+      parameters:
+        - $ref: '#/components/parameters/QuoteNo'
+      responses:
+        '200':
+          $ref: '#/components/responses/QuoteOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/orders:
+    post:
+      tags: [3. 订单管理（高风险）]
+      summary: 【高风险】根据报价创建并异步提交订单
+      description: 创建本地订单后可能异步提交真实上游并支付。仅在明确确认真实出票后调用。
+      operationId: createOrder
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+            example:
+              quoteNo: '{{quoteNo}}'
+              customerId: apifox-customer-001
+              paymentNo: apifox-payment-001
+      responses:
+        '200':
+          $ref: '#/components/responses/OrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/orders/{orderNo}:
+    get:
+      tags: [3. 订单管理（高风险）]
+      summary: 查询本地订单
+      operationId: getOrder
+      security:
+        - adminToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrderNo'
+      responses:
+        '200':
+          $ref: '#/components/responses/OrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/orders/{orderNo}/submit/retry:
+    post:
+      tags: [3. 订单管理（高风险）]
+      summary: 【高风险】安全续跑已有上游订单
+      description: 仅续跑已经存在明确上游订单号的订单，不应创建第二张上游订单；仍可能执行支付。
+      operationId: retryOrderSubmit
+      security:
+        - adminToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrderNo'
+      responses:
+        '200':
+          $ref: '#/components/responses/OrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/orders/{orderNo}/submit/repeat:
+    post:
+      tags: [3. 订单管理（高风险）]
+      summary: 【极高风险】强制重新提交上游订单
+      description: 默认拒绝执行。只有 `force=true` 才会强制重新提交，可能造成重复订单和重复支付。
+      operationId: repeatOrderSubmit
+      security:
+        - adminToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrderNo'
+        - name: force
+          in: query
+          required: false
+          description: 必须显式设为 true 才允许重新提交；可能重复下单。
+          schema:
+            type: boolean
+            default: false
+          example: false
+      responses:
+        '200':
+          $ref: '#/components/responses/OrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/orders/{orderNo}/sync:
+    post:
+      tags: [3. 订单管理（高风险）]
+      summary: 从上游同步订单状态
+      description: 查询已有上游订单状态，不创建新订单。
+      operationId: syncOrder
+      security:
+        - adminToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrderNo'
+      responses:
+        '200':
+          $ref: '#/components/responses/OrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/messages/image:
+    post:
+      tags: [4. 闲鱼插件]
+      summary: 接收闲鱼图片消息并报价
+      description: '`chatId + messageId` 用于幂等。同一消息重试时保持两者不变。'
+      operationId: createXianyuQuoteFromImage
+      security:
+        - xianyuPluginToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/XianyuImageMessageRequest'
+            example:
+              chatId: apifox-chat-001
+              messageId: apifox-message-001
+              buyerUserId: buyer-001
+              buyerNickname: 测试买家
+              sellerUserId: seller-001
+              itemId: item-001
+              imageUrl: ''
+              imageBase64: '{{ticketImageBase64}}'
+              rawPayload: '{}'
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuQuoteOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/orders/waiting-payment:
+    post:
+      tags: [4. 闲鱼插件]
+      summary: 登记闲鱼待付款订单
+      description: 使用已持久化报价登记待付款订单；请求不接受客户端 userId、金额或 rawPayload。
+      operationId: registerWaitingPayment
+      security:
+        - xianyuPluginToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/XianyuWaitingPaymentRequest'
+            example:
+              platformOrderId: apifox-platform-order-001
+              chatId: apifox-chat-001
+              buyerUserId: buyer-001
+              sellerUserId: seller-001
+              itemId: item-001
+              messageId: apifox-waiting-payment-001
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuWaitingPaymentOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/orders/{platformOrderId}/adjusted:
+    post:
+      tags: [4. 闲鱼插件]
+      summary: 确认闲鱼订单已改价
+      operationId: recordAdjusted
+      security:
+        - xianyuPluginToken: []
+      parameters:
+        - $ref: '#/components/parameters/PlatformOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/XianyuAdjustedOrderRequest'
+            example:
+              adjustedAmountCents: 5838
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuOrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/orders/waiting-payment/{chatId}:
+    get:
+      tags: [4. 闲鱼插件]
+      summary: 解析会话唯一待付款订单
+      operationId: resolveWaitingPaymentOrder
+      security:
+        - xianyuPluginToken: []
+      parameters:
+        - $ref: '#/components/parameters/ChatId'
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuOrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/orders/{platformOrderId}/paid-verification:
+    post:
+      tags: [4. 闲鱼插件]
+      summary: 提交闲鱼实付金额验证证据
+      description: 金额统一使用整数分；source 只允许已确认的闲鱼订单详情金额来源。
+      operationId: verifyPaid
+      security:
+        - xianyuPluginToken: []
+      parameters:
+        - $ref: '#/components/parameters/PlatformOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/XianyuPaidVerificationRequest'
+            example:
+              paidAmountCents: 5838
+              itemTotalCents: 5838
+              postFeeCents: 0
+              source: XIANYU_ORDER_DETAIL_PRICE_INFO_AMOUNT
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuOrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/orders/{platformOrderId}/verification-failures:
+    post:
+      tags: [4. 闲鱼插件]
+      summary: 记录闲鱼付款验证失败
+      description: 仅接受封闭失败码，不接受自由文本原因或 rawPayload。
+      operationId: recordVerificationFailure
+      security:
+        - xianyuPluginToken: []
+      parameters:
+        - $ref: '#/components/parameters/PlatformOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/XianyuVerificationFailureRequest'
+            example:
+              code: ORDER_DETAIL_PROTOCOL_ERROR
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuOrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/orders:
+    get:
+      tags: [4. 闲鱼插件]
+      summary: 查询闲鱼订单列表
+      operationId: listXianyuOrders
+      security:
+        - xianyuPluginToken: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/XianyuFulfillmentStatus'
+        - name: chatId
+          in: query
+          required: false
+          schema:
+            type: string
+          example: apifox-chat-001
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuOrderListOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/orders/active/{chatId}:
+    get:
+      tags: [4. 闲鱼插件]
+      summary: 查询会话中的活动订单
+      operationId: getActiveXianyuOrder
+      security:
+        - xianyuPluginToken: []
+      parameters:
+        - $ref: '#/components/parameters/ChatId'
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuOrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/orders/{platformOrderId}:
+    get:
+      tags: [4. 闲鱼插件]
+      summary: 查询单个闲鱼订单
+      operationId: getXianyuOrder
+      security:
+        - xianyuPluginToken: []
+      parameters:
+        - $ref: '#/components/parameters/PlatformOrderId'
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuOrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/orders/{platformOrderId}/manual:
+    post:
+      tags: [4. 闲鱼插件]
+      summary: 人工更新闲鱼订单状态
+      description: 用于人工处理台标记状态。请勿将未实际发货的订单标记为 `DELIVERED`。
+      operationId: updateXianyuOrderManually
+      security:
+        - xianyuPluginToken: []
+      parameters:
+        - $ref: '#/components/parameters/PlatformOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/XianyuManualOrderRequest'
+            example:
+              status: NEED_MANUAL
+              note: ApiFox 手动测试
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuOrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/quotes/latest/{chatId}:
+    get:
+      tags: [4. 闲鱼插件]
+      summary: 查询会话最新报价
+      operationId: getLatestXianyuQuote
+      security:
+        - xianyuPluginToken: []
+      parameters:
+        - $ref: '#/components/parameters/ChatId'
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuLatestQuoteOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/deliveries/pending:
+    get:
+      tags: [4. 闲鱼插件]
+      summary: 查询待发货闲鱼订单
+      operationId: listPendingXianyuDeliveries
+      security:
+        - xianyuPluginToken: []
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuOrderListOk'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/deliveries/{platformOrderId}/claim:
+    post:
+      tags: [4. 闲鱼插件]
+      summary: 认领待发货订单
+      description: 发货前创建并持久化唯一 Delivery Attempt。首次成功认领返回 DELIVERY_OUTCOME_PENDING、deliveryAttemptId 和一次性发货数据；重复认领不得再次执行发货。
+      operationId: claimXianyuDelivery
+      security:
+        - xianyuPluginToken: []
+      parameters:
+        - $ref: '#/components/parameters/PlatformOrderId'
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuOrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/deliveries/{platformOrderId}/result:
+    post:
+      tags: [4. 闲鱼插件]
+      summary: 回传闲鱼发货结果
+      operationId: recordXianyuDeliveryResult
+      security:
+        - xianyuPluginToken: []
+      parameters:
+        - $ref: '#/components/parameters/PlatformOrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/XianyuDeliveryResultRequest'
+            example:
+              attemptId: 7b75f470-6f6c-431b-b801-98d7f8296058
+              success: false
+              channel: xianyu-mtop
+              errorMessage: DUMMY_CONSIGN_FAILED
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuOrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/events:
+    post:
+      tags: [4. 闲鱼插件]
+      summary: 记录闲鱼插件事件
+      operationId: recordXianyuEvent
+      security:
+        - xianyuPluginToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/XianyuEventRequest'
+            example:
+              eventType: APIFOX_MANUAL_TEST
+              chatId: apifox-chat-001
+              platformOrderId: apifox-platform-order-001
+              messageId: apifox-event-001
+              rawPayload: '{"source":"apifox"}'
+      responses:
+        '200':
+          $ref: '#/components/responses/VoidOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+    get:
+      tags: [4. 闲鱼插件]
+      summary: 查询闲鱼事件
+      operationId: listXianyuEvents
+      security:
+        - xianyuPluginToken: []
+      parameters:
+        - name: chatId
+          in: query
+          required: false
+          schema:
+            type: string
+          example: apifox-chat-001
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuEventListOk'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/xianyu/reply-config:
+    get:
+      tags: [4. 闲鱼插件]
+      summary: 查询闲鱼自动回复配置
+      operationId: getXianyuReplyConfig
+      security:
+        - xianyuPluginToken: []
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuReplyConfigOk'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+    put:
+      tags: [4. 闲鱼插件]
+      summary: 保存闲鱼自动回复配置
+      operationId: saveXianyuReplyConfig
+      security:
+        - xianyuPluginToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/XianyuReplyConfigRequest'
+            example:
+              templates:
+                welcome: 你好，请发送电影票截图
+                quote: 已为你查询，整单价格为 {{totalPrice}} 元
+              keywordRules:
+                - keywords: [你好, 在吗]
+                  reply: 你好，请发送电影票截图
+              textFallbackEnabled: false
+      responses:
+        '200':
+          $ref: '#/components/responses/XianyuReplyConfigOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/bot/messages/image:
+    post:
+      tags: [5. 微信机器人]
+      summary: 微信私聊图片报价
+      description: '`wechatId + messageId` 为幂等键；重试同一消息必须保持 `messageId` 不变。'
+      operationId: createBotQuoteFromImage
+      security:
+        - botToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BotImageQuoteRequest'
+            example:
+              wechatId: wx_apifox_001
+              nickname: ApiFox 测试用户
+              avatarUrl: ''
+              messageId: wx-message-001
+              imageBase64: '{{ticketImageBase64}}'
+      responses:
+        '200':
+          $ref: '#/components/responses/BotQuoteOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/bot/payments/confirm:
+    post:
+      tags: [5. 微信机器人]
+      summary: 确认微信用户收款
+      description: '`paymentNo` 为幂等键；重复请求必须保持用户、报价和金额一致。'
+      operationId: confirmBotPayment
+      security:
+        - botToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BotPaymentConfirmRequest'
+            example:
+              wechatId: wx_apifox_001
+              quoteNo: '{{quoteNo}}'
+              amount: 58.38
+              paymentNo: wx-payment-001
+              proofImageUrl: ''
+              confirmer: apifox
+              remark: 手工测试收款确认
+      responses:
+        '200':
+          $ref: '#/components/responses/BotPaymentOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/bot/orders:
+    post:
+      tags: [5. 微信机器人]
+      summary: 【高风险】收款后创建并提交订单
+      description: 校验报价和收款记录后创建本地订单，并可能异步提交、支付真实上游。
+      operationId: createBotOrder
+      security:
+        - botToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BotCreateOrderRequest'
+            example:
+              wechatId: wx_apifox_001
+              quoteNo: '{{quoteNo}}'
+              paymentRecordNo: '{{paymentRecordNo}}'
+      responses:
+        '200':
+          $ref: '#/components/responses/OrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+  /api/bot/orders/{orderNo}:
+    get:
+      tags: [5. 微信机器人]
+      summary: 微信机器人轮询订单
+      description: '`shouldPoll=false` 时停止轮询；`status=ISSUED` 时读取 `ticketCodeInfo`。'
+      operationId: getBotOrder
+      security:
+        - botToken: []
+      parameters:
+        - $ref: '#/components/parameters/OrderNo'
+      responses:
+        '200':
+          $ref: '#/components/responses/OrderOk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/AuthNotConfigured'
+
+components:
+  securitySchemes:
+    adminToken:
+      type: apiKey
+      in: header
+      name: X-Admin-Token
+      description: 本地 profile 默认值为 `local-admin-token`
+    xianyuPluginToken:
+      type: apiKey
+      in: header
+      name: X-Plugin-Token
+      description: 用户控制台创建且已由管理员设置有效期的插件 Token；请求还必须携带 X-Plugin-Installation-Id
+    botToken:
+      type: apiKey
+      in: header
+      name: X-Bot-Token
+      description: 用户控制台创建且已由管理员设置有效期的机器人 Token；请求还必须携带 X-Bot-Installation-Id
+
+  parameters:
+    QuoteNo:
+      name: quoteNo
+      in: path
+      required: true
+      schema:
+        type: string
+      example: Q20260516120000ABCDEFGH
+    OrderNo:
+      name: orderNo
+      in: path
+      required: true
+      schema:
+        type: string
+      example: O20260516120000ABCDEFGH
+    ChatId:
+      name: chatId
+      in: path
+      required: true
+      schema:
+        type: string
+      example: apifox-chat-001
+    PlatformOrderId:
+      name: platformOrderId
+      in: path
+      required: true
+      schema:
+        type: string
+      example: apifox-platform-order-001
+
+  responses:
+    PiaoDaRenStatusOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/PiaoDaRenStatusEnvelope'
+    PiaoDaRenSmokeOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/PiaoDaRenSmokeEnvelope'
+    PiaoDaRenLoginOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/PiaoDaRenLoginEnvelope'
+    H5ProbeOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/H5ProbeEnvelope'
+    QuoteOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/QuoteEnvelope'
+    OrderOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OrderEnvelope'
+    XianyuQuoteOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/XianyuQuoteEnvelope'
+    XianyuWaitingPaymentOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/XianyuWaitingPaymentEnvelope'
+    XianyuOrderOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/XianyuOrderEnvelope'
+    XianyuOrderListOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/XianyuOrderListEnvelope'
+    XianyuLatestQuoteOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/XianyuLatestQuoteEnvelope'
+    XianyuEventListOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/XianyuEventListEnvelope'
+    XianyuReplyConfigOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/XianyuReplyConfigEnvelope'
+    BotQuoteOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BotQuoteEnvelope'
+    BotPaymentOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BotPaymentEnvelope'
+    VoidOk:
+      description: 成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/VoidEnvelope'
+    BadRequest:
+      description: 参数校验或业务规则失败
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            success: false
+            message: imageBase64 is required
+            data: null
+    Unauthorized:
+      description: Token 缺失或错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            success: false
+            message: Unauthorized
+            data: null
+    AuthNotConfigured:
+      description: 后端未配置对应接口 Token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            success: false
+            message: API token is not configured
+            data: null
+
+  schemas:
+    ApiResponseBase:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: ok
+    ErrorEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              nullable: true
+    VoidEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          properties:
+            data:
+              type: object
+              nullable: true
+              example: null
+    PiaoDaRenStatusEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/PiaoDaRenStatusResponse'
+    PiaoDaRenSmokeEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/PiaoDaRenSmokeCheckResponse'
+    PiaoDaRenLoginEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/PiaoDaRenLoginResponse'
+    H5ProbeEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/H5ProbeResponse'
+    QuoteEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/QuoteResponse'
+    OrderEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/OrderResponse'
+    XianyuQuoteEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/XianyuQuoteResult'
+    XianyuWaitingPaymentEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/XianyuWaitingPaymentResponse'
+    XianyuOrderEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/XianyuOrderResponse'
+    XianyuOrderListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/XianyuOrderResponse'
+    XianyuLatestQuoteEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/XianyuLatestQuoteResponse'
+    XianyuEventListEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/XianyuEventResponse'
+    XianyuReplyConfigEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/XianyuReplyConfigResponse'
+    BotQuoteEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/BotQuoteResponse'
+    BotPaymentEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseBase'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/BotPaymentResponse'
+
+    SalesChannel:
+      type: string
+      enum: [WECHAT, GOOFISH]
+    QuoteStatus:
+      type: string
+      enum: [CREATED, FAILED, ORDERED]
+    PaymentStatus:
+      type: string
+      enum: [PENDING, CONFIRMED, REJECTED, USED]
+    OrderStatus:
+      type: string
+      enum: [CREATED, WAIT_SUBMIT, SUBMITTING, SUBMITTED, SUBMIT_FAILED, WAIT_PAY, PAID, TICKETING, ISSUED, FAILED, REFUNDED]
+    XianyuFulfillmentStatus:
+      type: string
+      enum: [WAIT_IMAGE, QUOTED, WAIT_BUYER_PAY, PAID_WAIT_SUBMIT, TICKETING, ISSUED_WAIT_DELIVER, DELIVERY_OUTCOME_PENDING, DELIVERED, NEED_MANUAL, REFUNDED, CLOSED]
+
+    PiaoDaRenLoginRequest:
+      type: object
+      required: [userName, password]
+      properties:
+        userName:
+          type: string
+        password:
+          type: string
+          format: password
+          writeOnly: true
+        userTypeEnum:
+          type: string
+          default: Consume
+    PiaoDaRenBusinessInfo:
+      type: object
+      properties:
+        businessType:
+          type: string
+    PiaoDaRenUserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        userName:
+          type: string
+        enable:
+          type: integer
+          format: int32
+        regTime:
+          type: string
+        openId:
+          type: string
+        headImg:
+          type: string
+        nickname:
+          type: string
+        userBusinesses:
+          type: array
+          items:
+            $ref: '#/components/schemas/PiaoDaRenBusinessInfo'
+    PiaoDaRenLoginResponse:
+      type: object
+      required: [loggedIn]
+      properties:
+        loggedIn:
+          type: boolean
+        userToken:
+          type: string
+          description: 上游 Token，注意避免泄露
+        profile:
+          $ref: '#/components/schemas/PiaoDaRenUserProfile'
+    PiaoDaRenStatusResponse:
+      type: object
+      required: [provider, mockEnabled, autoLogin, loggedIn]
+      properties:
+        provider:
+          type: string
+          example: liangpiao-h5
+        mockEnabled:
+          type: boolean
+        autoLogin:
+          type: boolean
+        baseUrl:
+          type: string
+          format: uri
+        h5BaseUrl:
+          type: string
+          format: uri
+        loggedIn:
+          type: boolean
+        tokenPreview:
+          type: string
+        userId:
+          type: string
+        userName:
+          type: string
+        nickname:
+          type: string
+        lastLoginAt:
+          type: string
+          format: date-time
+          nullable: true
+    PiaoDaRenSmokeCheckItem:
+      type: object
+      required: [name, passed, message]
+      properties:
+        name:
+          type: string
+        passed:
+          type: boolean
+        message:
+          type: string
+    PiaoDaRenSmokeCheckResponse:
+      type: object
+      properties:
+        provider:
+          type: string
+        mockEnabled:
+          type: boolean
+        configuredCredentials:
+          type: boolean
+        loggedIn:
+          type: boolean
+        baseUrl:
+          type: string
+        h5BaseUrl:
+          type: string
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/PiaoDaRenSmokeCheckItem'
+        safeActions:
+          type: array
+          items:
+            type: string
+        guardedActions:
+          type: array
+          items:
+            type: string
+    H5ProbeResponse:
+      type: object
+      required: [available]
+      properties:
+        available:
+          type: boolean
+        length:
+          type: integer
+          format: int32
+        title:
+          type: string
+
+    CreateQuoteRequest:
+      type: object
+      required: [imageBase64]
+      properties:
+        imageBase64:
+          type: string
+          description: 图片 Base64 字符串；可包含或不包含 data URL 前缀，以后端实际配置为准
+        customerId:
+          type: string
+        channel:
+          $ref: '#/components/schemas/SalesChannel'
+    MovieTicketInfo:
+      type: object
+      properties:
+        taskId: {type: string}
+        provinceName: {type: string}
+        cityName: {type: string}
+        areaName: {type: string}
+        cityCode: {type: string}
+        cinemaId: {type: string}
+        cinemaCode: {type: string}
+        cinemaAddress: {type: string}
+        filmId: {type: string}
+        filmImg: {type: string}
+        customFilmType: {type: integer, format: int32}
+        showId: {type: string}
+        movieName: {type: string}
+        cinemaName: {type: string}
+        showTime: {type: string, format: date-time}
+        hallName: {type: string}
+        planType: {type: string}
+        seatCount: {type: integer, format: int32}
+        seats:
+          type: array
+          items: {type: string}
+        seatsAndPrice:
+          type: object
+          additionalProperties: {type: string}
+        maxPrice: {type: string}
+        totalImagePrice: {type: string}
+        imageUrl: {type: string}
+    QuoteResponse:
+      type: object
+      properties:
+        quoteNo:
+          type: string
+        ticketInfo:
+          $ref: '#/components/schemas/MovieTicketInfo'
+        upstreamPrice:
+          type: number
+        finalPrice:
+          type: number
+        totalPrice:
+          type: number
+        profit:
+          type: number
+        status:
+          $ref: '#/components/schemas/QuoteStatus'
+    CreateOrderRequest:
+      type: object
+      required: [quoteNo, customerId]
+      properties:
+        quoteNo:
+          type: string
+        customerId:
+          type: string
+        paymentNo:
+          type: string
+    OrderResponse:
+      type: object
+      properties:
+        orderNo: {type: string}
+        quoteNo: {type: string}
+        customerId: {type: string}
+        finalPrice: {type: number}
+        totalPrice: {type: number}
+        upstreamOrderId: {type: string, nullable: true}
+        upstreamOrderNo: {type: string, nullable: true}
+        upstreamOrderStatus: {type: integer, format: int32, nullable: true}
+        ticketCodeInfo: {type: string, nullable: true}
+        submitRetryCount: {type: integer, format: int32}
+        lastSubmitError: {type: string, nullable: true}
+        lastSyncError: {type: string, nullable: true}
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        statusText: {type: string}
+        terminal: {type: boolean}
+        shouldPoll: {type: boolean}
+
+    XianyuImageMessageRequest:
+      type: object
+      required: [chatId, messageId, imageBase64]
+      properties:
+        chatId: {type: string}
+        messageId: {type: string}
+        buyerUserId: {type: string}
+        buyerNickname: {type: string}
+        sellerUserId: {type: string}
+        itemId: {type: string}
+        imageUrl: {type: string}
+        imageBase64: {type: string}
+        rawPayload: {type: string}
+    XianyuQuoteResult:
+      type: object
+      properties:
+        chatId: {type: string}
+        messageId: {type: string}
+        duplicated: {type: boolean}
+        quoteNo: {type: string}
+        quote:
+          $ref: '#/components/schemas/QuoteResponse'
+        replyMessage: {type: string}
+    XianyuWaitingPaymentRequest:
+      type: object
+      required: [platformOrderId, chatId, buyerUserId, itemId, messageId]
+      properties:
+        platformOrderId: {type: string}
+        chatId: {type: string}
+        buyerUserId: {type: string}
+        sellerUserId: {type: string}
+        itemId: {type: string}
+        messageId: {type: string}
+    XianyuWaitingPaymentResponse:
+      type: object
+      required: [platformOrderId, quoteNo, totalPriceCents, status]
+      properties:
+        platformOrderId: {type: string}
+        quoteNo: {type: string}
+        totalPriceCents: {type: integer, format: int64}
+        status:
+          $ref: '#/components/schemas/XianyuFulfillmentStatus'
+    XianyuAdjustedOrderRequest:
+      type: object
+      required: [adjustedAmountCents]
+      properties:
+        adjustedAmountCents:
+          type: integer
+          format: int64
+          minimum: 1
+    XianyuAmountVerificationSource:
+      type: string
+      enum: [XIANYU_ORDER_DETAIL_PRICE_INFO_AMOUNT]
+    XianyuPaidVerificationRequest:
+      type: object
+      required: [paidAmountCents, itemTotalCents, postFeeCents, source]
+      properties:
+        paidAmountCents:
+          type: integer
+          format: int64
+          minimum: 1
+        itemTotalCents:
+          type: integer
+          format: int64
+          minimum: 1
+        postFeeCents:
+          type: integer
+          format: int64
+          minimum: 0
+        source:
+          $ref: '#/components/schemas/XianyuAmountVerificationSource'
+    XianyuVerificationFailureCode:
+      type: string
+      enum: [ADJUST_PRICE_REJECTED, ORDER_DETAIL_REQUEST_FAILED, ORDER_DETAIL_PROTOCOL_ERROR, ORDER_ID_MISMATCH, AMOUNT_MISMATCH, NON_ZERO_POST_FEE, MISSING_ADJUSTMENT]
+    XianyuVerificationFailureRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          $ref: '#/components/schemas/XianyuVerificationFailureCode'
+    XianyuManualOrderRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/XianyuFulfillmentStatus'
+        note: {type: string}
+    XianyuOrderResponse:
+      type: object
+      properties:
+        platformOrderId: {type: string}
+        tradeNo: {type: string}
+        chatId: {type: string}
+        buyerUserId: {type: string}
+        itemId: {type: string}
+        quoteNo: {type: string, nullable: true}
+        localOrderNo: {type: string, nullable: true}
+        paidAmount: {type: number, nullable: true}
+        quotedAmount: {type: number, nullable: true}
+        adjustedAmount: {type: number, nullable: true}
+        amountVerificationSource:
+          allOf:
+            - $ref: '#/components/schemas/XianyuAmountVerificationSource'
+          nullable: true
+        adjustedAt: {type: string, format: date-time, nullable: true}
+        amountVerifiedAt: {type: string, format: date-time, nullable: true}
+        status:
+          $ref: '#/components/schemas/XianyuFulfillmentStatus'
+        lastError: {type: string, nullable: true}
+        order:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/OrderResponse'
+          nullable: true
+        shouldPoll: {type: boolean}
+        shouldDeliver: {type: boolean}
+        deliveryMessage: {type: string, nullable: true}
+        ticketCodeInfo: {type: string, nullable: true}
+        deliveryAttemptId: {type: string, nullable: true}
+        deliveryAttemptStartedAt: {type: string, format: date-time, nullable: true}
+        deliveryAttemptOutcome:
+          type: string
+          enum: [SUCCESS, FAILURE]
+          nullable: true
+        deliveryAttemptChannel: {type: string, nullable: true}
+        deliveryAttemptErrorMessage: {type: string, nullable: true}
+        deliveryOutcomeRecordedAt: {type: string, format: date-time, nullable: true}
+    XianyuLatestQuoteResponse:
+      type: object
+      properties:
+        chatId: {type: string}
+        quoteNo: {type: string}
+        quote:
+          $ref: '#/components/schemas/QuoteResponse'
+        replyMessage: {type: string}
+    XianyuDeliveryResultRequest:
+      type: object
+      required: [attemptId, success, channel]
+      properties:
+        attemptId: {type: string}
+        success: {type: boolean}
+        channel: {type: string}
+        errorMessage: {type: string}
+    XianyuEventRequest:
+      type: object
+      required: [eventType]
+      properties:
+        eventType: {type: string}
+        chatId: {type: string}
+        platformOrderId: {type: string}
+        messageId: {type: string}
+        rawPayload: {type: string}
+    XianyuEventResponse:
+      type: object
+      properties:
+        id: {type: integer, format: int64}
+        chatId: {type: string}
+        messageId: {type: string}
+        senderUserId: {type: string}
+        messageType: {type: string}
+        quoteNo: {type: string}
+        rawPayload: {type: string}
+        createdAt: {type: string, format: date-time}
+    XianyuReplyConfigRequest:
+      type: object
+      properties:
+        templates:
+          type: object
+          additionalProperties: true
+        keywordRules:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        textFallbackEnabled:
+          type: boolean
+          default: false
+    XianyuReplyConfigResponse:
+      type: object
+      properties:
+        configKey: {type: string}
+        templates:
+          type: object
+          additionalProperties: true
+        keywordRules:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        textFallbackEnabled: {type: boolean}
+        updatedAt: {type: string, format: date-time, nullable: true}
+
+    BotImageQuoteRequest:
+      type: object
+      required: [wechatId, messageId, imageBase64]
+      properties:
+        wechatId: {type: string}
+        nickname: {type: string}
+        avatarUrl: {type: string}
+        messageId: {type: string}
+        imageBase64: {type: string}
+    BotQuoteResponse:
+      type: object
+      properties:
+        customerNo: {type: string}
+        messageId: {type: string}
+        duplicated: {type: boolean}
+        latest: {type: boolean}
+        latestQuoteNo: {type: string}
+        quote:
+          $ref: '#/components/schemas/QuoteResponse'
+    BotPaymentConfirmRequest:
+      type: object
+      required: [wechatId, quoteNo, amount, paymentNo]
+      properties:
+        wechatId: {type: string}
+        quoteNo: {type: string}
+        amount:
+          type: number
+          minimum: 0.01
+        paymentNo: {type: string}
+        proofImageUrl: {type: string}
+        confirmer: {type: string}
+        remark: {type: string}
+    BotPaymentResponse:
+      type: object
+      properties:
+        paymentRecordNo: {type: string}
+        customerNo: {type: string}
+        quoteNo: {type: string}
+        amount: {type: number}
+        status:
+          $ref: '#/components/schemas/PaymentStatus'
+    BotCreateOrderRequest:
+      type: object
+      required: [wechatId, quoteNo]
+      properties:
+        wechatId: {type: string}
+        quoteNo: {type: string}
+        paymentRecordNo:
+          type: string
+          description: 留空时使用该报价最近一条 CONFIRMED 收款记录

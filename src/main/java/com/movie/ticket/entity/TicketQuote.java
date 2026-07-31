@@ -10,11 +10,15 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Entity
-public class TicketQuote {
+@jakarta.persistence.EntityListeners(com.movie.ticket.shared.persistence.UserScopeEntityListener.class)
+public class TicketQuote implements com.movie.ticket.shared.persistence.UserScopedEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "user_id")
+    private Long userId;
 
     @Column(nullable = false, unique = true, length = 64)
     private String quoteNo;

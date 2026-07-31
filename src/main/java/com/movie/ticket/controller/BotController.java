@@ -9,6 +9,7 @@ import com.movie.ticket.dto.BotQuoteResponse;
 import com.movie.ticket.dto.OrderResponse;
 import com.movie.ticket.service.BotService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "Bot APIs", description = "Private WeChat bot APIs for quote, payment confirmation, order creation, and order polling")
+@SecurityRequirement(name = "botToken")
 @RestController
 @RequestMapping("/api/bot")
 public class BotController {

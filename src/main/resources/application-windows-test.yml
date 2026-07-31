@@ -1,0 +1,22 @@
+server:
+  address: 0.0.0.0
+  port: 8080
+
+ticket:
+  upstream:
+    mock-enabled: true
+    provider: "liangpiao-h5"
+    h5-base-url: "http://h5.liangpiao.net.cn"
+    base-url: "http://business-api.liangpiao.net.cn"
+    connect-timeout: 5s
+    read-timeout: 20s
+    max-image-size: 10MB
+    auto-login: false
+    user-token: ""
+  xianyu:
+    plugin-api-token: "local-dev-token"
+    auto-fulfillment-enabled: false
+  admin:
+    api-token: "local-admin-token"
+  bot:
+    api-token: "local-bot-token"

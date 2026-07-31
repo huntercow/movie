@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>闲鱼电影票自动发货</title>
+    <style>
+      body { width: 420px; margin: 0; font-family: system-ui, sans-serif; color: #1f2937; }
+      main { padding: 14px; display: grid; gap: 10px; }
+      label { display: grid; gap: 4px; font-size: 12px; }
+      input, textarea, select { padding: 7px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit; }
+      textarea { min-height: 120px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; }
+      button { height: 32px; border: 0; border-radius: 6px; color: white; background: #0f766e; cursor: pointer; }
+      .row { display: flex; gap: 8px; align-items: center; }
+      .between { justify-content: space-between; }
+      .row label { display: flex; gap: 6px; align-items: center; }
+      .row input { width: auto; }
+      .muted { font-size: 12px; color: #6b7280; }
+      .panel { border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; display: grid; gap: 8px; }
+      .capture-actions { flex-wrap: wrap; }
+      .capture-actions button { flex: 1 1 88px; }
+      .warning { padding: 8px; border-radius: 6px; background: #fef3c7; color: #78350f; font-size: 12px; line-height: 1.5; }
+      pre { margin: 0; max-height: 120px; overflow: auto; white-space: pre-wrap; font: 11px ui-monospace, SFMono-Regular, Consolas, monospace; color: #374151; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <strong>闲鱼电影票自动发货</strong>
+      <label>后端地址<input id="backendBaseUrl" placeholder="http://172.30.1.151:8080" /></label>
+      <label>插件 Token<input id="pluginApiToken" placeholder="输入用户控制台创建的 Token" /></label>
+      <section class="panel">
+        <div class="row between">
+          <strong>Token 状态</strong>
+          <button id="activateAgent" type="button">激活</button>
+        </div>
+        <div id="agentStatus" class="muted">正在读取...</div>
+      </section>
+      <div class="row">
+        <label><input id="autoReply" type="checkbox" />自动回复</label>
+        <label><input id="sendTicketImage" type="checkbox" />出票后发图</label>
+        <label><input id="textFallback" type="checkbox" />未命中发流程</label>
+      </div>
+      <section class="panel">
+        <div class="row between">
+          <strong>阿奇索状态</strong>
+          <button id="refreshAgiso" type="button">刷新</button>
+        </div>
+        <div id="agisoStatus" class="muted">未加载</div>
+        <pre id="agisoFallbacks">暂无 fallback 记录</pre>
+      </section>
+      <section class="panel">
+        <strong>闲鱼协议样本采集</strong>
+        <div class="warning">敏感数据：样本可能包含聊天、用户、商品、订单及图片 URL。只使用测试账号，并在分享前脱敏。</div>
+        <label>业务场景
+          <select id="captureScenario">
+            <option value="TEXT">普通文字</option>
+            <option value="IMAGE">图片</option>
+            <option value="WAIT_PAYMENT">待付款</option>
+            <option value="PAID">已付款</option>
+            <option value="OTHER">其他</option>
+          </select>
+        </label>
+        <div class="row capture-actions">
+          <button id="captureStart" type="button">开始采样</button>
+          <button id="captureStop" type="button">停止采样</button>
+          <button id="captureClear" type="button">清空</button>
+          <button id="captureExport" type="button">导出 JSON</button>
+        </div>
+        <pre id="captureStatus">正在读取...</pre>
+      </section>
+      <label>业务话术 JSON
+        <div class="row">
+          <button id="loadBuiltinTemplates" type="button">加载内置话术</button>
+          <button id="loadBackendReplyConfig" type="button">从后端加载</button>
+          <input id="templatesImport" type="file" accept=".json,application/json" />
+        </div>
+        <textarea id="replyTemplates"></textarea>
+      </label>
+      <label>关键词规则 JSON
+        <div class="row">
+          <button id="loadBuiltinRules" type="button">加载内置关键词</button>
+          <button id="saveBackendReplyConfig" type="button">保存到后端</button>
+          <input id="rulesImport" type="file" accept=".json,application/json" />
+        </div>
+        <textarea id="keywordRules"></textarea>
+      </label>
+      <button id="save">保存</button>
+      <button id="openXianyu">打开闲鱼 IM</button>
+      <button id="openAgiso">打开阿奇索</button>
+      <div id="status" class="muted"></div>
+    </main>
+    <script type="module" src="/js/popup.js"></script>
+  </body>
+</html>

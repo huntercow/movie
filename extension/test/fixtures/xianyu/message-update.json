@@ -1,0 +1,11 @@
+{
+  "1": "PNM_001.PNM", "2": "CHAT_001@goofish", "3": 1,
+  "4": {
+    "_CONTENT_MAP_UPDATE_PRE_dxCard.item.main.exContent.button": "{\"bgColor\":\"#FAFAFA\",\"borderColor\":\"#FAFAFA\",\"fontColor\":\"#C2C2C2\",\"targetUrl\":\"fleamarket://order_detail?id=ORDER_001&role=Buyer\",\"text\":\"已付款\"}",
+    "bizTag": "{\"sourceId\":\"C2C:TASK_001\",\"taskName\":\"修改价格待付款_买家\",\"materialId\":\"TASK_001\",\"taskId\":\"TASK_001\"}",
+    "closePushReceiver": "false", "closeUnreadNumber": "false", "detailNotice": "[我已修改价格，等待你付款]",
+    "extJson": "{\"msgArgs\":{\"task_id\":\"TASK_001\",\"source\":\"im\",\"msg_id\":\"MESSAGE_001\"},\"quickReply\":\"1\",\"msgArg1\":\"MsgCard\",\"updateKey\":\"CHAT_001:ORDER_001:2:TRADE_MODIFY_FEE_BUYER:26\",\"messageId\":\"MESSAGE_001\",\"multiChannel\":{\"huawei\":\"EXPRESS\",\"xiaomi\":\"108000\",\"oppo_notify_level\":\"16\",\"honor\":\"NORMAL\",\"agoo\":\"product\",\"oppo_category\":\"ORDER\",\"vivo\":\"ORDER\"},\"contentType\":\"26\"}",
+    "receiver": "BUYER_001", "redReminder": "等待卖家发货", "redReminderStyle": "1", "reminderContent": "[我已付款，等待你发货]", "reminderNotice": "我已修改价格，快来付款吧", "reminderTitle": "交易消息",
+    "reminderUrl": "fleamarket://message_chat?itemId=ITEM_001&peerUserId=SELLER_001&sid=CHAT_001&messageId=MESSAGE_001&adv=no", "senderUserId": "SELLER_001", "senderUserType": "0", "sessionType": "1", "updateHead": "true"
+  }, "5": 1785326919164
+}

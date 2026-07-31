@@ -23,6 +23,19 @@
 - 阿里云 OSS SDK
 - Maven
 
+## 多用户控制台
+
+生产控制台入口：`/console/`。系统首次启动进入初始化页创建唯一管理员，之后由管理员创建和管理用户。
+
+- 每个用户只能访问自己的报价、订单、话术、客户端状态和良票上游账号。
+- 用户可以创建多个浏览器插件或微信机器人 Token；新 Token 必须由管理员设置有效期后才能激活。
+- 一个 Token 只能绑定一个客户端 installation ID；换机或重装前需要在控制台解绑。
+- 一个插件安装同一时间只运行一个当前闲鱼账号，切换闲鱼登录后由插件自动更新后端快照。
+- 良票账号按用户保存并加密，OSS 继续使用平台统一配置。
+- 管理员负责用户账号、Token 有效期、吊销和操作审计，不进入用户业务工作区。
+
+平台接口的 ApiFox 导入文件为 `docs/apifox-platform-openapi.yaml`，部署说明见 `docs/platform-deployment.md`。
+
 ## 核心流程
 
 ### 报价流程
@@ -43,11 +56,11 @@
 
 ### 下单流程
 
-`POST /api/orders` 只创建本地订单并立即返回，真正的上游下单在后台异步执行：
+`POST /api/orders` 只创建本地订单并立即返回，真正的上游下单由数据库持久任务队列执行：
 
 ```text
 创建本地订单，状态 WAIT_SUBMIT
--> 异步调用票达人 /film/order/officialSubmitOrder
+-> Worker 调用票达人 /film/order/officialSubmitOrder
 -> 保存 upstreamOrderNo
 -> 自动调用票达人 /film/order/payOrder
 -> 调用 /film/order/getOrderDetail?orderNumber=...
@@ -61,7 +74,36 @@
 - `upstreamOrderId` 是票达人订单 ID，也就是 `data.orderInfo.id`
 - 取消订单接口 `/film/order/cancelOrder` 需要的是 `upstreamOrderId`，不是 `upstreamOrderNo`
 
+### 闲鱼付款验证流程
+
+闲鱼插件不会根据消息文案或可选字段猜测付款状态和金额。待付款、改价与付款验证按固定协议链路执行：
+
+```text
+WAITING_PAYMENT_CARD
+-> POST /api/xianyu/orders/waiting-payment
+-> mtop.idle.web.trade.adjust.price
+-> POST /api/xianyu/orders/{platformOrderId}/adjusted
+-> PAID_CARD 或 PAYMENT_SUMMARY
+-> mtop.idle.web.trade.order.detail
+-> POST /api/xianyu/orders/{platformOrderId}/paid-verification
+```
+
+订单详情中的 `priceInfo.amount.value` 是实付金额，`itemInfo.price` 是原价。后端只在报价、改价、实付金额完全一致且运费明确为零时允许自动履约；协议错误、订单 ID 不一致或金额不一致都进入 `NEED_MANUAL`，不会创建上游订单。默认 `ticket.xianyu.auto-fulfillment-enabled=false`，完成安全演练并明确授权真实出票后才能开启。
+
 ## 接口
+
+### 接口鉴权
+
+插件和机器人业务请求必须携带用户创建且在有效期内的 Token，以及该客户端的 installation ID：
+
+```text
+/api/xianyu/**                         X-Plugin-Token + X-Plugin-Installation-Id
+/api/bot/**                            X-Bot-Token + X-Bot-Installation-Id
+/api/quotes/**、/api/orders/**、
+/api/upstream/**                       X-Admin-Token: local-admin-token
+```
+
+插件与机器人 Token 由用户控制台创建，并由管理员设置有效期。旧业务管理接口仍通过 `ADMIN_API_TOKEN` 保护。
 
 ### 机器人私聊报价
 
@@ -71,7 +113,7 @@
 
 ```json
 {
-  "wechatId": "wx_19934419145",
+  "wechatId": "wx_13800138000",
   "nickname": "Hunter",
   "avatarUrl": "https://example.com/avatar.jpg",
   "messageId": "msg_10001",
@@ -105,7 +147,7 @@
 
 ```json
 {
-  "wechatId": "wx_19934419145",
+  "wechatId": "wx_13800138000",
   "quoteNo": "Q20260516120000ABCDEFGH",
   "amount": 58.38,
   "paymentNo": "wx-transfer-10001",
@@ -123,7 +165,7 @@
 
 ```json
 {
-  "wechatId": "wx_19934419145",
+  "wechatId": "wx_13800138000",
   "quoteNo": "Q20260516120000ABCDEFGH",
   "paymentRecordNo": "P20260516120000ABCDEFGH"
 }
@@ -205,11 +247,11 @@ lastSyncError          出票状态同步失败或上游失败原因
 
 `POST /api/orders/{orderNo}/submit/retry`
 
-适用于异步下单失败后，直接重试当前订单的上游提交逻辑。
+只续跑已经获得 `upstreamOrderNo` 的订单：先查上游状态，再按需要继续支付和查单，不会再次调用上游创建订单。若本地没有上游订单号，接口会拒绝自动重试，要求先人工核对上游订单列表。
 
 ### 取消旧上游单并重新下单支付
 
-`POST /api/orders/{orderNo}/submit/repeat`
+`POST /api/orders/{orderNo}/submit/repeat?force=false`
 
 用于人工手动重新下单支付。流程：
 
@@ -222,6 +264,8 @@ lastSyncError          出票状态同步失败或上游失败原因
 -> 重新 officialSubmitOrder
 -> 重新 payOrder
 ```
+
+当历史提交已经失败但本地没有 `upstreamOrderNo` 时，提交结果可能处于未知状态。必须先人工核对上游订单列表，再显式使用 `force=true` 新建订单。
 
 ### 手动同步订单状态
 
@@ -406,6 +450,16 @@ ticket:
     user-type-enum: "Consume"
     auto-login: true
     user-token: ""
+    connect-timeout: 5s
+    read-timeout: 20s
+    max-image-size: 10MB
+  xianyu:
+    plugin-api-token: ${XIANYU_PLUGIN_API_TOKEN:}
+    auto-fulfillment-enabled: ${XIANYU_AUTO_FULFILLMENT_ENABLED:false}
+  admin:
+    api-token: ${ADMIN_API_TOKEN:}
+  bot:
+    api-token: ${BOT_API_TOKEN:}
 ```
 
 账号、密码、OSS 密钥不要提交到 Git，建议放在本地 `application.yml` 或环境变量。

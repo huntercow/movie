@@ -1,0 +1,13 @@
+{
+  "api": "mtop.taobao.idle.trade.user.adjust.price",
+  "data": {
+    "needDecryptKeys": [],
+    "needDecryptKeysV2": [],
+    "serverDecryptKeys": [],
+    "serverTime": "1785326894840",
+    "success": true
+  },
+  "ret": ["SUCCESS::调用成功"],
+  "traceId": "TRACE_INVALID_001",
+  "v": "1.0"
+}

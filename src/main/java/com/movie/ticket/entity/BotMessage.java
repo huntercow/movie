@@ -20,14 +20,18 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Entity
+@jakarta.persistence.EntityListeners(com.movie.ticket.shared.persistence.UserScopeEntityListener.class)
 @Table(uniqueConstraints = {
         @UniqueConstraint(name = "uk_bot_message_wechat_message", columnNames = {"wechatId", "messageId"})
 })
-public class BotMessage {
+public class BotMessage implements com.movie.ticket.shared.persistence.UserScopedEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "user_id")
+    private Long userId;
 
     @Column(nullable = false, length = 128)
     private String wechatId;

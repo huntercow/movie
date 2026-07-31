@@ -1,0 +1,13 @@
+<script setup lang="ts">
+import { onMounted, ref } from "vue";
+import { ListTodo, RefreshCw } from "lucide-vue-next";
+import { ElMessage } from "element-plus";
+import { api } from "../api";
+import { formatDateTime, statusType } from "../format";
+import type { JobTask } from "../types";
+import { decodeArray, decodeJobTask } from "../contracts";
+const rows = ref<JobTask[]>([]); const loading = ref(false);
+async function load() { loading.value = true; try { rows.value = await api("/api/v1/admin/jobs", {}, decodeArray(decodeJobTask)); } catch (e) { ElMessage.error(e instanceof Error ? e.message : "加载失败"); } finally { loading.value = false; } }
+onMounted(load);
+</script>
+<template><div class="page-stack"><div class="page-heading"><div><h1>任务队列</h1><p>最近 100 个持久化后台任务</p></div><el-button :icon="RefreshCw" circle title="刷新" @click="load" /></div><el-table v-loading="loading" :data="rows" class="desktop-data-table" empty-text="暂无任务"><el-table-column prop="id" label="ID" width="75" /><el-table-column prop="userId" label="用户 ID" width="95" /><el-table-column prop="taskType" label="任务类型" min-width="170" /><el-table-column prop="businessKey" label="业务键" min-width="180" /><el-table-column label="状态" width="115"><template #default="{row}"><el-tag :type="statusType(row.status)" effect="plain">{{ row.status }}</el-tag></template></el-table-column><el-table-column prop="attemptCount" label="尝试" width="75" /><el-table-column label="下次执行" min-width="170"><template #default="{row}">{{ formatDateTime(row.nextRunAt) }}</template></el-table-column><el-table-column label="错误" min-width="260"><template #default="{row}"><span class="danger-text">{{ row.lastError || '-' }}</span></template></el-table-column></el-table><div v-loading="loading" class="mobile-data-list"><article v-for="row in rows" :key="row.id" class="mobile-data-card"><div class="mobile-card-head"><div><span class="mobile-card-icon amber"><ListTodo :size="18" /></span><div><strong>{{ row.taskType }}</strong><small>#{{ row.id }} · {{ row.businessKey }}</small></div></div><el-tag :type="statusType(row.status)" effect="light">{{ row.status }}</el-tag></div><dl><div><dt>用户 ID</dt><dd>{{ row.userId || '-' }}</dd></div><div><dt>尝试次数</dt><dd>{{ row.attemptCount }}</dd></div><div><dt>下次执行</dt><dd>{{ formatDateTime(row.nextRunAt) }}</dd></div><div><dt>更新时间</dt><dd>{{ formatDateTime(row.updatedAt) }}</dd></div></dl><el-alert v-if="row.lastError" :title="row.lastError" type="error" :closable="false" /></article><div v-if="!rows.length && !loading" class="mobile-empty"><ListTodo :size="24" /><span>暂无任务</span></div></div></div></template>

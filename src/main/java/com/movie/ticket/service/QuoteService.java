@@ -10,10 +10,10 @@ import com.movie.ticket.entity.QuoteStatus;
 import com.movie.ticket.entity.TicketQuote;
 import com.movie.ticket.exception.BusinessException;
 import com.movie.ticket.repository.TicketQuoteRepository;
+import com.movie.ticket.security.UserScopeContext;
 import com.movie.ticket.upstream.TicketUpstreamClient;
 import com.movie.ticket.upstream.UploadedImage;
 import com.movie.ticket.upstream.UpstreamQuote;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-@Slf4j
 @Service
 public class QuoteService {
 
@@ -53,7 +52,7 @@ public class QuoteService {
         UpstreamQuote upstreamQuote = upstreamClient.quote(ticketInfo);
         BigDecimal maxPrice = parsePrice(ticketInfo.maxPrice(), "invalid max price from OCR");
         BigDecimal finalPrice = pricingService.calculateFinalPrice(upstreamQuote.price(), maxPrice);
-        int ticketCount = ticketCount(ticketInfo.seatCount());
+        int ticketCount = requireTicketCount(ticketInfo.seatCount());
         BigDecimal totalPrice = finalPrice.multiply(BigDecimal.valueOf(ticketCount));
         BigDecimal totalProfit = finalPrice.subtract(upstreamQuote.price()).multiply(BigDecimal.valueOf(ticketCount));
 
@@ -99,14 +98,39 @@ public class QuoteService {
     }
 
     public QuoteResponse getQuote(String quoteNo) {
-        return quoteRepository.findByQuoteNo(quoteNo)
+        return findQuote(quoteNo)
                 .map(this::toResponse)
                 .orElseThrow(() -> new BusinessException("quote not found"));
     }
 
+    public List<QuoteResponse> listCurrentUserQuotes() {
+        Long userId = UserScopeContext.get();
+        if (userId == null) {
+            throw new BusinessException("user context is required");
+        }
+        return quoteRepository.findTop100ByUserIdOrderByCreatedAtDesc(userId).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
     TicketQuote requireQuote(String quoteNo) {
-        return quoteRepository.findByQuoteNo(quoteNo)
+        return findQuote(quoteNo)
                 .orElseThrow(() -> new BusinessException("quote not found"));
+    }
+
+    TicketQuote requireQuoteForUpdate(String quoteNo) {
+        Long userId = UserScopeContext.get();
+        return (userId == null
+                ? quoteRepository.findByQuoteNoForUpdate(quoteNo)
+                : quoteRepository.findByUserIdAndQuoteNoForUpdate(userId, quoteNo))
+                .orElseThrow(() -> new BusinessException("quote not found"));
+    }
+
+    private java.util.Optional<TicketQuote> findQuote(String quoteNo) {
+        Long userId = UserScopeContext.get();
+        return userId == null
+                ? quoteRepository.findByQuoteNo(quoteNo)
+                : quoteRepository.findByUserIdAndQuoteNo(userId, quoteNo);
     }
 
     private QuoteResponse toResponse(TicketQuote quote) {
@@ -159,39 +183,45 @@ public class QuoteService {
         }
     }
 
-    private int ticketCount(Integer seatCount) {
-        return seatCount == null || seatCount <= 0 ? 1 : seatCount;
+    private int requireTicketCount(Integer seatCount) {
+        if (seatCount == null || seatCount <= 0) {
+            throw new BusinessException("OCR result has invalid seat count");
+        }
+        return seatCount;
     }
 
     private String toJson(Object value) {
+        if (value == null) {
+            throw new BusinessException("quote JSON value is required");
+        }
         try {
-            return objectMapper.writeValueAsString(value == null ? List.of() : value);
+            return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException exception) {
-            return "[]";
+            throw new BusinessException("unable to serialize quote JSON", exception);
         }
     }
 
     private List<String> parseStringList(String json) {
         if (json == null || json.isBlank()) {
-            return List.of();
+            throw new BusinessException("stored quote seats JSON is missing");
         }
         try {
             return objectMapper.readValue(json, new TypeReference<>() {
             });
         } catch (JsonProcessingException exception) {
-            return List.of();
+            throw new BusinessException("stored quote seats JSON is invalid", exception);
         }
     }
 
     private Map<String, String> parseStringMap(String json) {
         if (json == null || json.isBlank()) {
-            return Map.of();
+            throw new BusinessException("stored quote seat prices JSON is missing");
         }
         try {
             return objectMapper.readValue(json, new TypeReference<>() {
             });
         } catch (JsonProcessingException exception) {
-            return Map.of();
+            throw new BusinessException("stored quote seat prices JSON is invalid", exception);
         }
     }
 }

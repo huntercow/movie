@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 
 @Schema(description = "Bot request for quoting a private chat ticket image")
 public record BotImageQuoteRequest(
-        @Schema(description = "Private WeChat user id or bot platform open id", example = "wx_19934419145")
+        @Schema(description = "Private WeChat user id or bot platform open id", example = "wx_13800138000")
         @NotBlank(message = "wechatId is required")
         String wechatId,
 

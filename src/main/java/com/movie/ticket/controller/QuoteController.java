@@ -4,6 +4,7 @@ import com.movie.ticket.dto.ApiResponse;
 import com.movie.ticket.dto.CreateQuoteRequest;
 import com.movie.ticket.dto.QuoteResponse;
 import com.movie.ticket.service.QuoteService;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/quotes")
+@SecurityRequirement(name = "adminToken")
 public class QuoteController {
 
     private final QuoteService quoteService;

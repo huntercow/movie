@@ -7,4 +7,6 @@ import java.util.Optional;
 
 public interface BotMessageRepository extends JpaRepository<BotMessage, Long> {
     Optional<BotMessage> findByWechatIdAndMessageId(String wechatId, String messageId);
+
+    Optional<BotMessage> findByUserIdAndWechatIdAndMessageId(Long userId, String wechatId, String messageId);
 }
