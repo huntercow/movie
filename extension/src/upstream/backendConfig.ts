@@ -43,4 +43,3 @@ export async function saveBackendConfig(
 ): Promise<void> {
   await storage.set({ [BACKEND_CONFIG_STORAGE_KEY]: config });
 }
-

@@ -164,5 +164,3 @@ export function decodeToolRequest(value: unknown): ToolRequest {
     payload: request.payload as Record<string, unknown>
   };
 }
-
-
