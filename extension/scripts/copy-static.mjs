@@ -7,8 +7,20 @@ const msgpackSource = resolve(root, "node_modules", "msgpack-lite", "dist", "msg
 const files = [
   ["manifest.json", "manifest.json"],
   ["popup.html", "popup.html"],
-  ["闲鱼业务话术_2026-03-16.json", "config/xianyu-reply-templates.json"],
-  ["闲鱼关键词回复规则_2026-03-16.json", "config/xianyu-keyword-rules.json"],
+  ["manage.html", "manage.html"],
+  ["assets/logo.svg", "assets/logo.svg"],
+  ["assets/vendor/fontawesome/all.min.css", "assets/vendor/fontawesome/all.min.css"],
+  ["assets/vendor/fontawesome/webfonts/fa-solid-900.woff2", "assets/vendor/fontawesome/webfonts/fa-solid-900.woff2"],
+  ["assets/vendor/fontawesome/webfonts/fa-regular-400.woff2", "assets/vendor/fontawesome/webfonts/fa-regular-400.woff2"],
+  ["assets/vendor/fontawesome/webfonts/fa-brands-400.woff2", "assets/vendor/fontawesome/webfonts/fa-brands-400.woff2"],
+  ["assets/vendor/fontawesome/webfonts/fa-solid-900.ttf", "assets/vendor/fontawesome/webfonts/fa-solid-900.ttf"],
+  ["assets/vendor/fontawesome/webfonts/fa-regular-400.ttf", "assets/vendor/fontawesome/webfonts/fa-regular-400.ttf"],
+  ["assets/vendor/fontawesome/webfonts/fa-brands-400.ttf", "assets/vendor/fontawesome/webfonts/fa-brands-400.ttf"],
+  ["assets/icon-16.png", "assets/icon-16.png"],
+  ["assets/icon-32.png", "assets/icon-32.png"],
+  ["assets/icon-48.png", "assets/icon-48.png"],
+  ["assets/icon-128.png", "assets/icon-128.png"],
+  ["rules/block-mmstat.json", "rules/block-mmstat.json"],
   [msgpackSource, "libs/msgpack.min.js"]
 ];
 

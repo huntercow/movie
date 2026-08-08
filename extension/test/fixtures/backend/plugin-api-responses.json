@@ -1,0 +1,286 @@
+{
+  "success": {
+    "sync": {
+      "success": true,
+      "message": "ok",
+      "data": {
+        "automationEnabled": false,
+        "automationRevision": 1,
+        "replyConfigVersion": 3
+      }
+    },
+    "automation": {
+      "success": true,
+      "message": "ok",
+      "data": {
+        "automationEnabled": true,
+        "automationRevision": 2
+      }
+    },
+    "replyConfig": {
+      "success": true,
+      "message": "ok",
+      "data": {
+        "version": 3,
+        "templates": {
+          "edit_price_success": "价格已修改，请核对后付款",
+          "payment_successful": "已收到付款，正在出票",
+          "no_quote_record": "未找到报价，请先发送选座截图",
+          "text_message_replay": "购票流程说明",
+          "identify_wait": "正在识别",
+          "identify_fail": "识别失败",
+          "identify_success": "报价成功",
+          "show_time_too_short": "时间太近",
+          "cancel_ticket": "已取消",
+          "send_ticket_success": "取票码：[取票码]"
+        },
+        "keywordRules": [
+          {
+            "id": "greeting",
+            "keywords": [
+              "你好",
+              "在吗"
+            ],
+            "reply": "请发送选座截图，我来报价",
+            "enabled": true,
+            "priority": 10
+          }
+        ]
+      }
+    },
+    "aiReply": {
+      "success": true,
+      "message": "ok",
+      "data": {
+        "reply": "该场电影晚上八点开场。"
+      }
+    },
+    "quoteCreate": {
+      "success": true,
+      "message": "accepted",
+      "data": {
+        "quoteTaskId": "QT_001"
+      }
+    },
+    "quoteProcessing": {
+      "success": true,
+      "message": "ok",
+      "data": {
+        "status": "PROCESSING"
+      }
+    },
+    "quoteSucceeded": {
+      "success": true,
+      "message": "ok",
+      "data": {
+        "status": "SUCCEEDED",
+        "quote": {
+          "id": "ORDER_RECORD_001",
+          "cityName": "北京",
+          "cinemaAddress": "测试路1号",
+          "cinemaName": "测试影院",
+          "hallName": "1号厅",
+          "filmName": "测试电影",
+          "showTime": "2026-08-01T20:00:00+08:00",
+          "seats": [
+            "A1",
+            "A2"
+          ],
+          "ticketNum": 2,
+          "biddingPrice": 20,
+          "amount": 39.99,
+          "marketPrice": 30
+        }
+      }
+    },
+    "quoteFailed": {
+      "success": true,
+      "message": "ok",
+      "data": {
+        "status": "FAILED",
+        "failureCode": "IDENTIFY_FAIL"
+      }
+    },
+    "waitingPayment": {
+      "success": true,
+      "message": "ok",
+      "data": {
+        "id": "ORDER_RECORD_001",
+        "status": 20,
+        "productId": "ITEM_001",
+        "customerId": "BUYER_001",
+        "cityName": "北京",
+        "cinemaName": "测试影院",
+        "amount": 39.99
+      }
+    },
+    "statusUpdate": {
+      "success": true,
+      "message": "ok",
+      "data": null
+    },
+    "byStatus": {
+      "success": true,
+      "message": "ok",
+      "data": {
+        "id": "ORDER_RECORD_001",
+        "xianyuOrderId": "123456789",
+        "customerId": "BUYER_001",
+        "amount": 39.99
+      }
+    },
+    "ticketResults": {
+      "success": true,
+      "message": "ok",
+      "data": [
+        {
+          "id": "ORDER_RECORD_001",
+          "status": 50,
+          "chatId": "CHAT_001",
+          "customerId": "BUYER_001",
+          "ticketCodeInfo": {
+            "ticketItems": [
+              {
+                "ticketCode": "123456",
+                "ticketCodeOriginImage": "https://cdn.example.com/ticket-1.png"
+              }
+            ]
+          }
+        },
+        {
+          "id": "ORDER_RECORD_002",
+          "status": 450,
+          "chatId": "CHAT_002",
+          "customerId": "BUYER_002",
+          "xianyuOrderId": "987654321"
+        }
+      ]
+    },
+    "resultUpdate": {
+      "success": true,
+      "message": "ok",
+      "data": null
+    }
+  },
+  "empty": {
+    "aiReply": {
+      "success": true,
+      "message": "ok",
+      "data": {
+        "reply": null
+      }
+    },
+    "waitingPayment": {
+      "success": true,
+      "message": "ok",
+      "data": null
+    },
+    "byStatus": {
+      "success": true,
+      "message": "ok",
+      "data": null
+    },
+    "ticketResults": {
+      "success": true,
+      "message": "ok",
+      "data": []
+    }
+  },
+  "errors": {
+    "unauthorized": {
+      "status": 401,
+      "body": {
+        "success": false,
+        "message": "token invalid",
+        "data": null
+      }
+    },
+    "successOnHttpError": {
+      "status": 500,
+      "body": {
+        "success": true,
+        "message": "ok",
+        "data": null
+      }
+    },
+    "failureOnHttpSuccess": {
+      "status": 200,
+      "body": {
+        "success": false,
+        "message": "failed",
+        "data": null
+      }
+    },
+    "failureWithData": {
+      "status": 422,
+      "body": {
+        "success": false,
+        "message": "invalid request",
+        "data": {
+          "debug": "must not be exposed"
+        }
+      }
+    },
+    "missingData": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "message": "ok"
+      }
+    },
+    "emptyMessage": {
+      "status": 200,
+      "body": {
+        "success": true,
+        "message": " ",
+        "data": null
+      }
+    },
+    "malformedSync": {
+      "success": true,
+      "message": "ok",
+      "data": {
+        "automationEnabled": false,
+        "automationRevision": -1,
+        "replyConfigVersion": 3
+      }
+    },
+    "malformedQuote": {
+      "success": true,
+      "message": "ok",
+      "data": {
+        "status": "SUCCEEDED",
+        "failureCode": "IDENTIFY_FAIL",
+        "quote": {
+          "id": "ORDER_RECORD_001",
+          "cityName": "北京",
+          "cinemaAddress": "测试路1号",
+          "cinemaName": "测试影院",
+          "hallName": "1号厅",
+          "filmName": "测试电影",
+          "showTime": "2026-08-01 20:00:00",
+          "seats": [
+            "A1",
+            "A2"
+          ],
+          "ticketNum": 1,
+          "biddingPrice": 20,
+          "amount": 40,
+          "marketPrice": 30
+        }
+      }
+    },
+    "unknownTicketStatus": {
+      "success": true,
+      "message": "ok",
+      "data": [
+        {
+          "id": "ORDER_RECORD_001",
+          "status": 51,
+          "chatId": "CHAT_001",
+          "customerId": "BUYER_001"
+        }
+      ]
+    }
+  }
+}

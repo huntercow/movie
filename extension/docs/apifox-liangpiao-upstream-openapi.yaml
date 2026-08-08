@@ -1,0 +1,1079 @@
+openapi: 3.0.3
+info:
+  title: 良票上游与 OSS 图片上传 API
+  version: 1.0.0
+  license:
+    name: Proprietary
+  description: |
+    当前电影票后端实际接入的良票上游接口，以及调用 OCR 前使用的阿里云 OSS
+    PutObject 图片上传接口。可直接导入 Apifox。
+
+    良票业务 API 的 Base URL 为 `http://business-api.liangpiao.net.cn`。除登录外，
+    所有良票请求都必须携带登录响应顶层 `token` 作为 `user-token` 请求头。
+
+    良票业务响应必须是 JSON 对象，顶层 `state` 只在数值 `200` 或字符串
+    `"200"` 时表示成功。非成功响应必须包含非空 `message`。金额字段均以整数分传输，
+    除非字段说明明确标注其他单位。
+
+    OSS 上传由当前 Java 后端通过阿里云 OSS SDK 完成。OpenAPI 中展示的是 SDK
+    最终对应的 PutObject HTTP 合同。OSS `Authorization` 必须根据阿里云签名协议动态
+    计算，不能直接发送 AccessKey Secret；在 Apifox 中调用时应使用预请求脚本生成签名，
+    或使用具有上传权限的预签名 URL。不要在共享环境保存 AccessKey Secret。
+servers:
+  - url: http://business-api.liangpiao.net.cn
+    description: 良票业务 API
+tags:
+  - name: 1. OSS 图片上传
+    description: 上传 JPEG、PNG 或 WebP 影票图片，取得供 OCR 使用的公网 URL
+  - name: 2. 良票认证与检查
+    description: 登录良票及读取城市列表
+  - name: 3. 良票 OCR 与报价
+    description: 识别影票截图并取得官方报价
+  - name: 4. 良票订单（高风险）
+    description: 提交、支付、查询和取消真实上游订单
+
+paths:
+  /{uploadDir}/{objectName}:
+    put:
+      tags: [1. OSS 图片上传]
+      summary: 上传影票图片到阿里云 OSS
+      description: |
+        对应当前后端使用的 OSS SDK `putObject(bucketName, objectName, inputStream, metadata)`。
+        上传成功后，图片 URL 为：
+        `https://{bucketName}.{ossRegion}.aliyuncs.com/{uploadDir}/{objectName}`。
+
+        当前后端以 UUID 生成 `objectName`，扩展名只允许 `.jpg`、`.png`、`.webp`，
+        并设置准确的 `Content-Type` 与 `Content-Length`。成功响应必须包含
+        `x-oss-request-id`；代码不会接受缺失请求 ID 的上传结果。
+      operationId: uploadTicketImageToOss
+      servers:
+        - url: https://{bucketName}.{ossRegion}.aliyuncs.com
+          description: 阿里云 OSS Bucket 虚拟主机地址
+          variables:
+            bucketName:
+              default: example-ticket-images
+              description: OSS Bucket 名称，请在 Apifox 环境中替换
+            ossRegion:
+              default: oss-cn-beijing
+              description: OSS Region/Endpoint 前缀
+      security:
+        - ossAuthorization: []
+      parameters:
+        - name: uploadDir
+          in: path
+          required: true
+          description: OSS 上传目录，不含首尾斜杠
+          schema:
+            type: string
+            default: ticket-img
+            example: ticket-img
+        - name: objectName
+          in: path
+          required: true
+          description: UUID 文件名及扩展名
+          schema:
+            type: string
+            pattern: '^[A-Fa-f0-9]{32}\.(jpg|png|webp)$'
+            example: 0123456789abcdef0123456789abcdef.jpg
+        - $ref: '#/components/parameters/OssDate'
+        - $ref: '#/components/parameters/OssContentSha256'
+      requestBody:
+        required: true
+        description: 原始图片二进制内容，不是 Base64 字符串
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/webp:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: 上传成功
+          headers:
+            x-oss-request-id:
+              description: OSS 请求 ID，当前后端要求非空
+              schema:
+                type: string
+            ETag:
+              description: 上传对象的 ETag
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/OssError'
+        '403':
+          $ref: '#/components/responses/OssError'
+        '404':
+          $ref: '#/components/responses/OssError'
+        '500':
+          $ref: '#/components/responses/OssError'
+
+  /login:
+    post:
+      tags: [2. 良票认证与检查]
+      summary: 登录良票账号
+      description: |
+        登录成功后读取响应顶层 `token`，后续良票业务请求将其作为 `user-token`。
+        `data.id` 和 `data.userName` 是当前后端要求的用户资料字段。
+      operationId: loginLiangPiao
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Referer'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              userName: '{{upstreamUsername}}'
+              password: '{{upstreamPassword}}'
+              userTypeEnum: Consume
+      responses:
+        '200':
+          description: HTTP 请求成功；通过响应顶层 state 判断业务结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/LoginSuccessResponse'
+                  - $ref: '#/components/schemas/BusinessErrorResponse'
+              examples:
+                success:
+                  summary: 登录成功
+                  value:
+                    state: 200
+                    token: upstream-user-token-placeholder
+                    data:
+                      id: upstream-user-id
+                      userName: upstream-user
+                      enable: 1
+                      nickname: 示例用户
+                      userBusinesses:
+                        - businessType: FILM
+                failure:
+                  $ref: '#/components/examples/BusinessFailure'
+        '400':
+          $ref: '#/components/responses/UpstreamHttpError'
+        '401':
+          $ref: '#/components/responses/UpstreamHttpError'
+        default:
+          $ref: '#/components/responses/UpstreamHttpError'
+
+  /film/cinema/getCityList:
+    get:
+      tags: [2. 良票认证与检查]
+      summary: 获取城市列表
+      description: 当前后端将该只读接口用于登录态和连通性检查，只要求响应 state 为 200。
+      operationId: getLiangPiaoCityList
+      security:
+        - userToken: []
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Referer'
+        - $ref: '#/components/parameters/UserAgent'
+      responses:
+        '200':
+          description: HTTP 请求成功；城市项完整字段尚未由当前代码消费
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CityListSuccessResponse'
+                  - $ref: '#/components/schemas/BusinessErrorResponse'
+              examples:
+                success:
+                  value:
+                    state: 200
+                    data: []
+                failure:
+                  $ref: '#/components/examples/BusinessFailure'
+        '401':
+          $ref: '#/components/responses/UpstreamUnauthorized'
+        default:
+          $ref: '#/components/responses/UpstreamHttpError'
+
+  /film/identify/filmIdentify:
+    post:
+      tags: [3. 良票 OCR 与报价]
+      summary: 识别影票图片
+      description: |
+        `imgUrl` 必须是 OSS 上传后可由良票访问的图片 URL。当前代码要求 OCR 返回非空
+        `showId`、数值毫秒时间戳 `showTime`、非空座位数组，以及每个座位的名称和分单位价格。
+      operationId: identifyFilmTicket
+      security:
+        - userToken: []
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Referer'
+        - $ref: '#/components/parameters/UserAgent'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/FilmIdentifyRequest'
+            example:
+              imgUrl: https://example-ticket-images.oss-cn-beijing.aliyuncs.com/ticket-img/0123456789abcdef0123456789abcdef.jpg
+      responses:
+        '200':
+          description: HTTP 请求成功；通过 state 判断 OCR 是否成功
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/FilmIdentifySuccessResponse'
+                  - $ref: '#/components/schemas/BusinessErrorResponse'
+              examples:
+                success:
+                  $ref: '#/components/examples/FilmIdentifySuccess'
+                failure:
+                  $ref: '#/components/examples/BusinessFailure'
+        '401':
+          $ref: '#/components/responses/UpstreamUnauthorized'
+        default:
+          $ref: '#/components/responses/UpstreamHttpError'
+
+  /film/order/officialQuotation:
+    post:
+      tags: [3. 良票 OCR 与报价]
+      summary: 获取官方报价
+      description: |
+        当前后端对同一场次调用本接口两次，第一次传 `LIMIT_PRICE`，第二次传
+        `FIX_PRICE`，然后选择两个正数报价中较高的一项。`netPrice`、`limitPrice`、
+        `fixPrice` 都使用整数分；响应 `taskId` 会作为提交订单时的
+        `officialQuotationId`。
+      operationId: getOfficialQuotation
+      security:
+        - userToken: []
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Referer'
+        - $ref: '#/components/parameters/UserAgent'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfficialQuotationRequest'
+            examples:
+              limitPrice:
+                summary: 限价通道
+                value:
+                  showId: show-001
+                  netPrice: '3300'
+                  seatCount: 2
+                  seatName: [5排6座, 5排7座]
+                  quotationChannels: [LIMIT_PRICE]
+              fixPrice:
+                summary: 一口价通道
+                value:
+                  showId: show-001
+                  netPrice: '3300'
+                  seatCount: 2
+                  seatName: [5排6座, 5排7座]
+                  quotationChannels: [FIX_PRICE]
+      responses:
+        '200':
+          description: HTTP 请求成功；价格字段由请求的报价通道决定
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OfficialQuotationSuccessResponse'
+                  - $ref: '#/components/schemas/BusinessErrorResponse'
+              examples:
+                limitPriceSuccess:
+                  value:
+                    state: 200
+                    result: true
+                    data:
+                      taskId: limit-quotation-task
+                      limitPrice: 2766
+                fixPriceSuccess:
+                  value:
+                    state: 200
+                    result: true
+                    data:
+                      taskId: fix-quotation-task
+                      fixPrice: 2888
+                failure:
+                  $ref: '#/components/examples/BusinessFailure'
+        '401':
+          $ref: '#/components/responses/UpstreamUnauthorized'
+        default:
+          $ref: '#/components/responses/UpstreamHttpError'
+
+  /film/order/officialSubmitOrder:
+    post:
+      tags: [4. 良票订单（高风险）]
+      summary: 【高风险】提交真实上游订单
+      description: |
+        可能创建真实良票订单。成功时只使用 `data.orderNumber` 作为上游订单号。
+        取消订单所需的上游订单 ID 必须随后通过订单详情的 `data.orderInfo.id` 获取，
+        不得用 `orderNumber` 替代。
+      operationId: submitOfficialOrder
+      security:
+        - userToken: []
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Referer'
+        - $ref: '#/components/parameters/UserAgent'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfficialSubmitOrderRequest'
+            example:
+              userId: '{{upstreamUserId}}'
+              userName: '{{upstreamUsername}}'
+              showId: show-001
+              seats:
+                - row: 5
+                  col: 6
+                  seatName: 5排6座
+                - row: 5
+                  col: 7
+                  seatName: 5排7座
+              channel: 3
+              orderType: 1
+              changeSeat: 1
+              inputLimitPrice: 2888
+              matchChannel: 1
+              quotationMode: 1
+              inquiryPrice: 2888
+              officialQuotationId: fix-quotation-task
+              officialChannel: 1
+              OfficialQuotationChannel: [2]
+              officialChannelState: 1
+      responses:
+        '200':
+          description: HTTP 请求成功；通过 state 判断提交是否成功
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OfficialSubmitOrderSuccessResponse'
+                  - $ref: '#/components/schemas/BusinessErrorResponse'
+              examples:
+                success:
+                  value:
+                    state: 200
+                    data:
+                      orderNumber: LP202608040001
+                failure:
+                  $ref: '#/components/examples/BusinessFailure'
+        '401':
+          $ref: '#/components/responses/UpstreamUnauthorized'
+        default:
+          $ref: '#/components/responses/UpstreamHttpError'
+
+  /film/order/payOrder:
+    post:
+      tags: [4. 良票订单（高风险）]
+      summary: 【高风险】支付真实上游订单
+      description: 使用提交接口返回的 `data.orderNumber` 支付订单。当前代码只接受明确的 state 200。
+      operationId: payLiangPiaoOrder
+      security:
+        - userToken: []
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Referer'
+        - $ref: '#/components/parameters/UserAgent'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PayOrderRequest'
+            example:
+              orderNumber: LP202608040001
+      responses:
+        '200':
+          description: HTTP 请求成功；当前代码不依赖成功响应中的其他字段
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/GenericBusinessSuccessResponse'
+                  - $ref: '#/components/schemas/BusinessErrorResponse'
+              examples:
+                success:
+                  value:
+                    state: 200
+                failure:
+                  $ref: '#/components/examples/BusinessFailure'
+        '401':
+          $ref: '#/components/responses/UpstreamUnauthorized'
+        default:
+          $ref: '#/components/responses/UpstreamHttpError'
+
+  /film/order/getOrderDetail:
+    get:
+      tags: [4. 良票订单（高风险）]
+      summary: 查询上游订单详情
+      description: |
+        使用 `orderNumber` 查询。`data.orderInfo.id` 是取消接口使用的上游订单 ID；
+        `data.orderInfo.orderStatus` 当前只支持 1、4、5、12。状态 5 表示已出票，
+        此时 `ticketInfo` 中必须提供至少一个 `ticket` 或 `ticketCode`。
+
+        当前状态映射：1=待支付、4=出票中、5=已出票、12=已退款。失败原因读取优先级为
+        `failedReason`、`refundReason`、`cancelReason`。
+      operationId: getLiangPiaoOrderDetail
+      security:
+        - userToken: []
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Referer'
+        - $ref: '#/components/parameters/UserAgent'
+        - name: orderNumber
+          in: query
+          required: true
+          description: 提交订单接口返回的上游订单号
+          schema:
+            type: string
+            minLength: 1
+          example: LP202608040001
+      responses:
+        '200':
+          description: HTTP 请求成功；通过 state 判断查询是否成功
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OrderDetailSuccessResponse'
+                  - $ref: '#/components/schemas/BusinessErrorResponse'
+              examples:
+                ticketing:
+                  value:
+                    state: 200
+                    data:
+                      orderInfo:
+                        id: '987654321'
+                        orderStatus: 4
+                      ticketInfo: []
+                issued:
+                  value:
+                    state: 200
+                    data:
+                      orderInfo:
+                        id: '987654321'
+                        orderStatus: 5
+                      ticketInfo:
+                        - ticket: 取票信息示例
+                          ticketCode: '123456'
+                failure:
+                  $ref: '#/components/examples/BusinessFailure'
+        '401':
+          $ref: '#/components/responses/UpstreamUnauthorized'
+        default:
+          $ref: '#/components/responses/UpstreamHttpError'
+
+  /film/order/cancelOrder:
+    post:
+      tags: [4. 良票订单（高风险）]
+      summary: 【高风险】取消真实上游订单
+      description: |
+        `orderId` 必须来自订单详情的 `data.orderInfo.id`，不能传提交接口返回的
+        `orderNumber`。当前代码只接受明确的 state 200。
+      operationId: cancelLiangPiaoOrder
+      security:
+        - userToken: []
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/Referer'
+        - $ref: '#/components/parameters/UserAgent'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CancelOrderRequest'
+            example:
+              orderId: '987654321'
+      responses:
+        '200':
+          description: HTTP 请求成功；当前代码不依赖成功响应中的其他字段
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/GenericBusinessSuccessResponse'
+                  - $ref: '#/components/schemas/BusinessErrorResponse'
+              examples:
+                success:
+                  value:
+                    state: 200
+                failure:
+                  $ref: '#/components/examples/BusinessFailure'
+        '401':
+          $ref: '#/components/responses/UpstreamUnauthorized'
+        default:
+          $ref: '#/components/responses/UpstreamHttpError'
+
+components:
+  securitySchemes:
+    userToken:
+      type: apiKey
+      in: header
+      name: user-token
+      description: 登录接口成功响应顶层的 token
+    ossAuthorization:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 由阿里云 OSS 签名算法或预签名 URL 生成，不是 AccessKey Secret 原文
+
+  parameters:
+    Origin:
+      name: Origin
+      in: header
+      required: true
+      schema:
+        type: string
+        default: http://h5.liangpiao.net.cn
+      example: http://h5.liangpiao.net.cn
+    Referer:
+      name: Referer
+      in: header
+      required: true
+      schema:
+        type: string
+        default: http://h5.liangpiao.net.cn/
+      example: http://h5.liangpiao.net.cn/
+    UserAgent:
+      name: User-Agent
+      in: header
+      required: true
+      schema:
+        type: string
+        default: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/132.0.0.0 Safari/537.36
+    OssDate:
+      name: Date
+      in: header
+      required: false
+      description: OSS 签名版本要求的 RFC 1123 时间；使用预签名 URL时可由 URL 参数代替
+      schema:
+        type: string
+      example: Tue, 04 Aug 2026 12:00:00 GMT
+    OssContentSha256:
+      name: x-oss-content-sha256
+      in: header
+      required: false
+      description: 使用要求载荷哈希的 OSS 签名版本时填写
+      schema:
+        type: string
+
+  schemas:
+    SuccessState:
+      description: 良票成功状态，当前代码接受数值 200 或字符串 "200"
+      oneOf:
+        - type: integer
+          enum: [200]
+        - type: string
+          enum: ['200']
+
+    FailureState:
+      description: 非 200 的三位业务状态码
+      oneOf:
+        - type: integer
+          minimum: 100
+          maximum: 999
+          not:
+            enum: [200]
+        - type: string
+          pattern: '^(?!200$)[0-9]{3}$'
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [userName, password, userTypeEnum]
+      properties:
+        userName:
+          type: string
+          minLength: 1
+        password:
+          type: string
+          format: password
+          minLength: 1
+          writeOnly: true
+        userTypeEnum:
+          type: string
+          enum: [Consume]
+          default: Consume
+
+    LoginSuccessResponse:
+      type: object
+      additionalProperties: true
+      required: [state, token, data]
+      properties:
+        state:
+          $ref: '#/components/schemas/SuccessState'
+        token:
+          type: string
+          minLength: 1
+          description: 后续请求使用的 user-token
+        data:
+          $ref: '#/components/schemas/LoginUserData'
+
+    LoginUserData:
+      type: object
+      additionalProperties: true
+      required: [id, userName]
+      properties:
+        id:
+          type: string
+          minLength: 1
+        userName:
+          type: string
+          minLength: 1
+        enable:
+          type: integer
+        regTime:
+          type: string
+        openId:
+          type: string
+        headImg:
+          type: string
+        nickname:
+          type: string
+        userBusinesses:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            required: [businessType]
+            properties:
+              businessType:
+                type: string
+                minLength: 1
+
+    BusinessErrorResponse:
+      type: object
+      additionalProperties: true
+      required: [state, message]
+      properties:
+        state:
+          $ref: '#/components/schemas/FailureState'
+        message:
+          type: string
+          minLength: 1
+
+    GenericBusinessSuccessResponse:
+      type: object
+      additionalProperties: true
+      required: [state]
+      properties:
+        state:
+          $ref: '#/components/schemas/SuccessState'
+        result:
+          type: boolean
+
+    CityListSuccessResponse:
+      type: object
+      additionalProperties: true
+      required: [state, data]
+      properties:
+        state:
+          $ref: '#/components/schemas/SuccessState'
+        data:
+          type: array
+          description: 当前后端不消费城市项字段，因此不声明未经验证的字段合同
+          items:
+            type: object
+            additionalProperties: true
+
+    FilmIdentifyRequest:
+      type: object
+      additionalProperties: false
+      required: [imgUrl]
+      properties:
+        imgUrl:
+          type: string
+          format: uri
+          minLength: 1
+          description: 良票服务可直接访问的 OSS 图片 URL
+
+    FilmIdentifySuccessResponse:
+      type: object
+      additionalProperties: true
+      required: [state, data]
+      properties:
+        state:
+          $ref: '#/components/schemas/SuccessState'
+        result:
+          type: boolean
+        data:
+          type: object
+          additionalProperties: true
+          required: [imageUrl, discern]
+          properties:
+            taskId:
+              type: string
+            imageUrl:
+              type: string
+              minLength: 1
+            discern:
+              $ref: '#/components/schemas/FilmDiscern'
+
+    FilmDiscern:
+      type: object
+      additionalProperties: true
+      required: [showId, showTime, seats]
+      properties:
+        province:
+          type: string
+        city:
+          type: string
+        area:
+          type: string
+        cityCode:
+          type: string
+        cinemaId:
+          type: string
+        cinemaCode:
+          type: string
+        cinemaAddress:
+          type: string
+        filmId:
+          type: string
+        filmImg:
+          type: string
+        customFilmType:
+          type: integer
+        showId:
+          type: string
+          minLength: 1
+        filmName:
+          type: string
+        cinemaName:
+          type: string
+        showTime:
+          type: integer
+          format: int64
+          description: Unix 毫秒时间戳
+        hallName:
+          type: string
+        planType:
+          type: string
+        seats:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/OcrSeat'
+        totalImagePrice:
+          type: number
+          description: 图片中全部座位总价，单位为分
+
+    OcrSeat:
+      type: object
+      additionalProperties: true
+      required: [seatName, seatPrice]
+      properties:
+        seatName:
+          type: string
+          minLength: 1
+          example: 5排6座
+        seatPrice:
+          type: number
+          description: 座位票面价，单位为分
+          example: 3300
+
+    OfficialQuotationRequest:
+      type: object
+      additionalProperties: false
+      required: [showId, netPrice, seatCount, seatName, quotationChannels]
+      properties:
+        showId:
+          type: string
+          minLength: 1
+        netPrice:
+          type: string
+          pattern: '^[0-9]+$'
+          description: OCR 识别出的单张最高票面价，整数分字符串
+        seatCount:
+          type: integer
+          minimum: 1
+        seatName:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+        quotationChannels:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: string
+            enum: [LIMIT_PRICE, FIX_PRICE]
+
+    OfficialQuotationSuccessResponse:
+      type: object
+      additionalProperties: true
+      required: [state, data]
+      properties:
+        state:
+          $ref: '#/components/schemas/SuccessState'
+        result:
+          type: boolean
+        data:
+          type: object
+          additionalProperties: true
+          required: [taskId]
+          properties:
+            taskId:
+              type: string
+              minLength: 1
+            limitPrice:
+              type: number
+              description: LIMIT_PRICE 通道报价，单位为分
+            fixPrice:
+              type: number
+              description: FIX_PRICE 通道报价，单位为分
+
+    OfficialSubmitOrderRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - userId
+        - userName
+        - showId
+        - seats
+        - channel
+        - orderType
+        - changeSeat
+        - inputLimitPrice
+        - matchChannel
+        - quotationMode
+        - inquiryPrice
+        - officialQuotationId
+        - officialChannel
+        - OfficialQuotationChannel
+        - officialChannelState
+      properties:
+        userId:
+          type: string
+          minLength: 1
+        userName:
+          type: string
+          minLength: 1
+        showId:
+          type: string
+          minLength: 1
+        seats:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/SubmitSeat'
+        channel:
+          type: integer
+          enum: [3]
+        orderType:
+          type: integer
+          enum: [1]
+        changeSeat:
+          type: integer
+          enum: [1]
+        inputLimitPrice:
+          type: integer
+          minimum: 1
+          description: 选中的上游报价，单位为分
+        matchChannel:
+          type: integer
+          enum: [1]
+        quotationMode:
+          type: integer
+          enum: [1]
+        inquiryPrice:
+          type: integer
+          minimum: 1
+          description: 选中的上游报价，单位为分
+        officialQuotationId:
+          type: string
+          minLength: 1
+          description: 官方报价响应的 data.taskId
+        officialChannel:
+          type: integer
+          enum: [1]
+        OfficialQuotationChannel:
+          type: array
+          minItems: 1
+          maxItems: 1
+          description: 大写 O 为上游当前实际字段名；1=LIMIT_PRICE，2=FIX_PRICE
+          items:
+            type: integer
+            enum: [1, 2]
+        officialChannelState:
+          type: integer
+          enum: [1]
+
+    SubmitSeat:
+      type: object
+      additionalProperties: false
+      required: [row, col, seatName]
+      properties:
+        row:
+          type: integer
+          minimum: 1
+        col:
+          type: integer
+          minimum: 1
+        seatName:
+          type: string
+          pattern: '^[0-9]+排[0-9]+座$'
+
+    OfficialSubmitOrderSuccessResponse:
+      type: object
+      additionalProperties: true
+      required: [state, data]
+      properties:
+        state:
+          $ref: '#/components/schemas/SuccessState'
+        data:
+          type: object
+          additionalProperties: true
+          required: [orderNumber]
+          properties:
+            orderNumber:
+              type: string
+              minLength: 1
+              description: 上游订单号，用于支付和详情查询
+
+    PayOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [orderNumber]
+      properties:
+        orderNumber:
+          type: string
+          minLength: 1
+          description: 提交订单响应的 data.orderNumber
+
+    CancelOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [orderId]
+      properties:
+        orderId:
+          type: string
+          minLength: 1
+          description: 订单详情响应的 data.orderInfo.id，不是 orderNumber
+
+    OrderDetailSuccessResponse:
+      type: object
+      additionalProperties: true
+      required: [state, data]
+      properties:
+        state:
+          $ref: '#/components/schemas/SuccessState'
+        data:
+          type: object
+          additionalProperties: true
+          required: [orderInfo]
+          properties:
+            orderInfo:
+              $ref: '#/components/schemas/OrderInfo'
+            ticketInfo:
+              type: array
+              items:
+                $ref: '#/components/schemas/TicketInfoItem'
+            failedReason:
+              type: string
+            refundReason:
+              type: string
+            cancelReason:
+              type: string
+
+    OrderInfo:
+      type: object
+      additionalProperties: true
+      required: [id, orderStatus]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: 上游订单 ID，用于取消订单
+        orderStatus:
+          type: integer
+          enum: [1, 4, 5, 12]
+          description: 1=待支付，4=出票中，5=已出票，12=已退款
+
+    TicketInfoItem:
+      type: object
+      additionalProperties: true
+      anyOf:
+        - required: [ticket]
+        - required: [ticketCode]
+      properties:
+        ticket:
+          type: string
+        ticketCode:
+          type: string
+
+    OssErrorResponse:
+      type: object
+      additionalProperties: true
+      properties:
+        Code:
+          type: string
+        Message:
+          type: string
+        RequestId:
+          type: string
+        HostId:
+          type: string
+      xml:
+        name: Error
+
+  responses:
+    UpstreamUnauthorized:
+      description: HTTP 401，上游 user-token 已失效；当前后端会清除缓存会话并要求重新登录
+    UpstreamHttpError:
+      description: 良票返回非 2xx HTTP 状态；当前后端不会继续解析成功数据
+    OssError:
+      description: OSS 请求失败
+      content:
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/OssErrorResponse'
+
+  examples:
+    BusinessFailure:
+      summary: 良票业务失败
+      value:
+        state: 400
+        message: upstream error message
+    FilmIdentifySuccess:
+      summary: OCR 成功
+      value:
+        state: 200
+        result: true
+        data:
+          taskId: ocr-task-001
+          imageUrl: https://example-ticket-images.oss-cn-beijing.aliyuncs.com/ticket-img/0123456789abcdef0123456789abcdef.jpg
+          discern:
+            province: 四川省
+            city: 成都市
+            cityCode: '510100'
+            cinemaId: cinema-001
+            filmId: film-001
+            showId: show-001
+            filmName: 示例电影
+            cinemaName: 示例影院
+            showTime: 1780000000000
+            hallName: 1号厅
+            seats:
+              - seatName: 5排6座
+                seatPrice: 3300
+              - seatName: 5排7座
+                seatPrice: 3200
+            totalImagePrice: 6500

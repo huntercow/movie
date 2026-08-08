@@ -6,14 +6,28 @@ import {
   XianyuOrderDetailRequestError,
   createAdjustPriceRequest,
   createOrderDetailRequest,
+  createWaitingPaymentHeadInfoRequest,
   decimalAmountToCents,
+  rmbAmountToCents,
   decodeAdjustPriceResponse,
-  decodeOrderDetailResponse
-} from "../src/xianyuTradeProtocol.ts";
+  decodeOrderDetailResponse,
+  decodeWaitingPaymentHeadInfoResponse
+} from "../src/protocol/xianyuTradeProtocol.ts";
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/xianyu/${name}.json`, import.meta.url), "utf8"));
 const clone = value => structuredClone(value);
-const orderDetail = () => fixture("order-detail-success");
+const orderDetail = () => {
+  const response = fixture("order-detail-success");
+  const orderInfoVO = response.orderInfoVO;
+  delete response.orderInfoVO;
+  response.data = { components: [orderInfoVO] };
+  Object.defineProperty(response, "orderInfoVO", {
+    value: orderInfoVO,
+    configurable: true,
+    writable: true
+  });
+  return response;
+};
 
 test("constructs exact MTop business data with integer cents", () => {
   assert.deepEqual(createAdjustPriceRequest(1, "ORDER_001"), {
@@ -22,6 +36,38 @@ test("constructs exact MTop business data with integer cents", () => {
     orderId: "ORDER_001"
   });
   assert.deepEqual(createOrderDetailRequest("ORDER_001"), { tid: "ORDER_001" });
+});
+
+test("constructs and decodes the confirmed waiting-payment headinfo contract", () => {
+  assert.deepEqual(createWaitingPaymentHeadInfoRequest("CHAT_001", "ITEM_001"), {
+    itemId: "ITEM_001",
+    sessionId: "CHAT_001",
+    sessionType: 1
+  });
+  assert.equal(
+    decodeWaitingPaymentHeadInfoResponse(fixture("waiting-payment-headinfo-success")),
+    "ORDER_001"
+  );
+  assert.throws(
+    () => createWaitingPaymentHeadInfoRequest("", "ITEM_001"),
+    /sessionId must be a non-empty string/
+  );
+  const failed = fixture("waiting-payment-headinfo-success");
+  failed.ret = ["FAIL_BIZ::解析失败"];
+  delete failed.data;
+  assert.throws(
+    () => decodeWaitingPaymentHeadInfoResponse(failed),
+    /waiting-payment headinfo failed: FAIL_BIZ/
+  );
+});
+
+test("headinfo requires the order id at the confirmed response path", () => {
+  const response = fixture("waiting-payment-headinfo-success");
+  delete response.data.commonData.utArgs.orderId;
+  assert.throws(() => decodeWaitingPaymentHeadInfoResponse(response), /orderId/);
+  const wrongApi = fixture("waiting-payment-headinfo-success");
+  wrongApi.api = "unknown";
+  assert.throws(() => decodeWaitingPaymentHeadInfoResponse(wrongApi), /api mismatch/);
 });
 
 test("rejects non-positive or unsafe adjust-price cents", () => {
@@ -42,6 +88,17 @@ test("converts exact two-decimal strings without floating point", () => {
   assert.throws(() => decimalAmountToCents("1.001"), /two-decimal string/);
 });
 
+test("converts backend RMB numbers to integer cents without binary rounding", () => {
+  assert.equal(rmbAmountToCents(0.01), 1);
+  assert.equal(rmbAmountToCents(0.29), 29);
+  assert.equal(rmbAmountToCents(39.99), 3999);
+  assert.equal(rmbAmountToCents(40), 4000);
+  assert.equal(rmbAmountToCents(40.5), 4050);
+  for (const value of [0, -1, 1.001, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.throws(() => rmbAmountToCents(value), /positive RMB amount|safe integer/);
+  }
+});
+
 test("rejects invalid decimal amount syntax and unsafe cent values", () => {
   for (const amount of ["-1.00", "+1.00", "1e2", " 1.00", "1.00 ", "90071992547409.92"]) {
     assert.throws(() => decimalAmountToCents(amount), /two-decimal string|safe integer/);
@@ -50,6 +107,14 @@ test("rejects invalid decimal amount syntax and unsafe cent values", () => {
 
 test("accepts an adjust-price response only when ret SUCCESS and data.success true", () => {
   assert.doesNotThrow(() => decodeAdjustPriceResponse(fixture("adjust-price-success")));
+});
+
+test("accepts the window.lib.mtop.request response shape with responseHeaders/retType", () => {
+  // 真实抓包:直接调用 window.lib.mtop.request 时响应额外携带 responseHeaders/retType
+  assert.doesNotThrow(() => decodeAdjustPriceResponse(fixture("adjust-price-success-libmtop")));
+  // 未知键(非 mtop 附加的 responseHeaders/retType)仍拒绝
+  const response = fixture("adjust-price-success-libmtop"); response.unknown = true;
+  assert.throws(() => decodeAdjustPriceResponse(response), /unexpected structure/);
 });
 
 test("rejects unknown keys in the successful adjust-price response and data", () => {
@@ -104,7 +169,7 @@ test("rejects unknown top-level fields in a successful order detail response", (
 });
 
 test("validates the complete successful order-detail envelope before reading orderInfoVO", () => {
-  const response = orderDetail(); response.unknown = true; response.orderInfoVO = null;
+  const response = orderDetail(); response.unknown = true; response.data.components[0] = null;
   assert.throws(() => decodeOrderDetailResponse(response, "ORDER_001"), /order detail response has an unexpected structure/);
 });
 
@@ -160,18 +225,21 @@ test("rejects missing and incorrectly typed order-detail ret values as protocol 
 });
 
 test("rejects missing orderInfoVO", () => {
-  const response = orderDetail(); delete response.orderInfoVO;
+  const response = orderDetail(); response.data.components = [];
   assert.throws(() => decodeOrderDetailResponse(response, "ORDER_001"), /expected exactly one orderInfoVO/);
 });
 
 test("rejects a duplicate orderInfoVO component", () => {
-  const response = orderDetail(); response.orderInfoVO = [response.orderInfoVO, clone(response.orderInfoVO)];
+  const response = orderDetail(); response.data.components.push(clone(response.data.components[0]));
   assert.throws(() => decodeOrderDetailResponse(response, "ORDER_001"), /expected exactly one orderInfoVO/);
 });
 
-test("rejects the obsolete top-level data.components order detail shape", () => {
-  const response = orderDetail(); response.data = { components: [{ key: "orderInfoVO", value: response.orderInfoVO }] }; delete response.orderInfoVO;
-  assert.throws(() => decodeOrderDetailResponse(response, "ORDER_001"), /order detail response has an unexpected structure/);
+test("reads the orderInfoVO component from the reference data.components shape", () => {
+  assert.deepEqual(decodeOrderDetailResponse(orderDetail(), "ORDER_001"), {
+    actualPaidAmountCents: 1,
+    itemTotalCents: 1,
+    postFeeCents: 0
+  });
 });
 
 test("rejects an order identifier that differs from the expected id", () => {

@@ -1,0 +1,15 @@
+{
+  "api": "mtop.taobao.idle.trade.user.adjust.price",
+  "data": {
+    "needDecryptKeys": [],
+    "needDecryptKeysV2": [],
+    "serverDecryptKeys": [],
+    "serverTime": "2026-08-06 22:39:09",
+    "success": true
+  },
+  "ret": ["SUCCESS::调用成功"],
+  "traceId": "TRACE_LIB_001",
+  "v": "1.0",
+  "responseHeaders": "cache-control: no-cache\r\ncontent-type: application/json",
+  "retType": 0
+}
