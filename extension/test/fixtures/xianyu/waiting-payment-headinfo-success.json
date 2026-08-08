@@ -1,0 +1,13 @@
+{
+  "api": "mtop.idle.trade.pc.message.headinfo",
+  "ret": ["SUCCESS::调用成功"],
+  "data": {
+    "commonData": {
+      "utArgs": {
+        "orderId": "ORDER_001"
+      }
+    }
+  },
+  "traceId": "TRACE_001",
+  "v": "1.0"
+}

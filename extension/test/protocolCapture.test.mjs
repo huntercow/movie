@@ -8,7 +8,7 @@ import {
   decodeCaptureStatus,
   decodeSocketFrame,
   toCaptureJsonValue
-} from "../src/protocolCapture.ts";
+} from "../src/webhook/protocolCapture.ts";
 
 test("decodeCaptureCommand accepts only defined actions and scenarios", () => {
   assert.deepEqual(decodeCaptureCommand({ action: "START", scenario: "TEXT" }), {
@@ -34,7 +34,7 @@ test("decodeCaptureStatus rejects incomplete status objects", () => {
 
 test("decodeSocketFrame identifies direct JSON without content guessing", () => {
   const decoded = decodeSocketFrame('{"code":200}', () => assert.fail("msgpack must not run"));
-  assert.deepEqual(decoded, { transport: "JSON", payload: { code: 200 } });
+  assert.deepEqual(decoded, [{ transport: "JSON", payload: { code: 200 } }]);
 });
 
 test("decodeSocketFrame decodes the defined syncPushPackage path", () => {
@@ -42,16 +42,28 @@ test("decodeSocketFrame decodes the defined syncPushPackage path", () => {
   const decoded = decodeSocketFrame(JSON.stringify({
     body: { syncPushPackage: { data: [{ data: encoded }] } }
   }), (bytes) => ({ bytes: [...bytes] }));
-  assert.deepEqual(decoded, {
+  assert.deepEqual(decoded, [{
     transport: "SYNC_PUSH_MSGPACK",
     payload: { bytes: [1, 2, 3] }
-  });
+  }]);
+});
+
+test("decodeSocketFrame decodes every entry of a multi-entry sync package", () => {
+  const first = btoa(String.fromCharCode(1, 2, 3));
+  const second = btoa(String.fromCharCode(4, 5));
+  const decoded = decodeSocketFrame(JSON.stringify({
+    body: { syncPushPackage: { data: [{ data: first }, { data: second }] } }
+  }), (bytes) => ({ bytes: [...bytes] }));
+  assert.deepEqual(decoded, [
+    { transport: "SYNC_PUSH_MSGPACK", payload: { bytes: [1, 2, 3] } },
+    { transport: "SYNC_PUSH_MSGPACK", payload: { bytes: [4, 5] } }
+  ]);
 });
 
 test("decodeSocketFrame rejects malformed defined sync packages", () => {
   assert.throws(
     () => decodeSocketFrame('{"body":{"syncPushPackage":{"data":[]}}}', () => ({})),
-    /syncPushPackage data must contain exactly one entry/
+    /syncPushPackage data must contain at least one entry/
   );
 });
 

@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||mmstat.com",
+      "resourceTypes": [
+        "xmlhttprequest",
+        "image",
+        "script",
+        "other"
+      ]
+    }
+  }
+]

@@ -1,0 +1,33 @@
+{
+  "headers": {
+    "app-key": "444e9908a51d1cb236a27862abc769c9",
+    "mid": "8a990006 0",
+    "ua": "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome REDACTED DingTalk(2.2.0) IMPaaS DingWeb/2.2.0",
+    "sid": "210497126a7481865f9b7c6b744a3336af97fdfbbd4f"
+  },
+  "lwp": "/s/sync",
+  "body": {
+    "syncPushPackage": {
+      "maxHighPts": 0,
+      "startSeq": 5,
+      "endSeq": 5,
+      "minCreateTime": 1786020461039,
+      "data": [
+        {
+          "bizType": 40,
+          "data": "ggGLAYEBtTIyMjI3MDk0MzMwODVAZ29vZmlzaAKzNjQ4ODA3NDcyNjJAZ29vZmlzaAOxNDI0NDk2NTExNTE0My5QTk0EAAXPAAABn9cdee8GggFlA4UBoAKm5L2g5aW9A6AEAQXaACp7ImNvbnRlbnRUeXBlIjoxLCJ0ZXh0Ijp7InRleHQiOiLkvaDlpb0ifX0HAggBCQAKjKtfYXBwVmVyc2lvbqMxLjCpX3BsYXRmb3Jto3dlYqZiaXpUYWfaAEF7InNvdXJjZUlkIjoiUzoxIiwibWVzc2FnZUlkIjoiMGI4YWQwZjU4M2NjNDA3M2FmNGFjYzg4YmVkZWQ2NzEifaxkZXRhaWxOb3RpY2Wm5L2g5aW9p2V4dEpzb27aAEt7InF1aWNrUmVwbHkiOiIxIiwibWVzc2FnZUlkIjoiMGI4YWQwZjU4M2NjNDA3M2FmNGFjYzg4YmVkZWQ2NzEiLCJ0YWciOiJ1In2vcmVtaW5kZXJDb250ZW50puS9oOWlva5yZW1pbmRlck5vdGljZbXlj5HmnaXkuIDmnaHmlrDmtojmga+tcmVtaW5kZXJUaXRsZaZIdW50ZXKrcmVtaW5kZXJVcmzaAIlmbGVhbWFya2V0Oi8vbWVzc2FnZV9jaGF0P2l0ZW1JZD0xMDY4OTgyNzM1NDEzJnBlZXJVc2VySWQ9MjIyMjcwOTQzMzA4NSZzaWQ9NjQ4ODA3NDcyNjImbWVzc2FnZUlkPTBiOGFkMGY1ODNjYzQwNzNhZjRhY2M4OGJlZGVkNjcxJmFkdj1ub6xzZW5kZXJVc2VySWStMjIyMjcwOTQzMzA4Na5zZW5kZXJVc2VyVHlwZaEwq3Nlc3Npb25UeXBloTEMAQOBqG5lZWRQdXNopHRydWU=",
+          "streamId": "40",
+          "objectType": 40000
+        }
+      ],
+      "maxPts": 1786020461349000,
+      "hasMore": 0,
+      "timestamp": 1786020461354
+    },
+    "syncExtensionModel": {
+      "reconnectType": 0,
+      "failover": 0,
+      "fingerprint": -685933782
+    }
+  }
+}

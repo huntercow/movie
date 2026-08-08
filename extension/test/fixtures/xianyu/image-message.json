@@ -1,14 +1,14 @@
 {
   "1": {
     "1": { "1": "BUYER_001@goofish" }, "2": "CHAT_001@goofish", "3": "PNM_001.PNM", "4": 0, "5": 1785326880501,
-    "6": { "1": 101, "3": { "1": "", "2": "[图片]", "3": "", "4": 2, "5": "{\"atUsers\":[],\"contentType\":2,\"image\":{\"pics\":[{\"height\":2800,\"type\":0,\"url\":\"https://example.test/image-001.jpg\",\"width\":1264}]}}" } },
+    "6": { "1": 101, "3": { "1": "", "2": "[图片]", "3": "", "4": 2, "5": "{\"contentType\":2,\"image\":{\"pics\":[{\"height\":2800,\"type\":0,\"url\":\"https://example.test/image-001.jpg\",\"width\":1264}]}}" } },
     "7": 2, "8": 1, "9": 0,
     "10": {
-      "_appVersion": "7.27.41", "_platform": "android", "bizTag": "{\"sourceId\":\"S:1\",\"messageId\":\"MESSAGE_001\"}",
-      "clientIp": "REDACTED_IP", "detailNotice": "[图片]", "extJson": "{\"quickReply\":\"1\",\"utdid\":\"REDACTED_UTDID\",\"messageId\":\"MESSAGE_001\",\"umidToken\":\"REDACTED_TOKEN\",\"tag\":\"u\"}",
-      "port": "REDACTED_PORT", "reminderContent": "[图片]", "reminderNotice": "发来一条新消息", "reminderTitle": "REDACTED_NICKNAME",
+      "_appVersion": "1.0", "_platform": "web", "bizTag": "{\"sourceId\":\"S:1\",\"messageId\":\"MESSAGE_001\"}",
+      "detailNotice": "[图片]", "extJson": "{\"quickReply\":\"1\",\"messageId\":\"MESSAGE_001\",\"tag\":\"u\"}",
+      "reminderContent": "[图片]", "reminderNotice": "发来一条新消息", "reminderTitle": "REDACTED_NICKNAME",
       "reminderUrl": "fleamarket://message_chat?itemId=ITEM_001&peerUserId=BUYER_001&sid=CHAT_001&messageId=MESSAGE_001&adv=no",
-      "senderUserId": "BUYER_001", "senderUserType": "0", "sessionType": "1", "umid": "REDACTED_UMID", "umidToken": "REDACTED_TOKEN", "utdid": "REDACTED_UTDID"
+      "senderUserId": "BUYER_001", "senderUserType": "0", "sessionType": "1"
     }, "12": 1
   },
   "3": { "needPush": "true" }

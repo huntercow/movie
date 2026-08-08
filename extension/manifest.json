@@ -5,24 +5,44 @@
   "version": "0.1.0",
   "action": {
     "default_title": "电影票发货",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "assets/icon-16.png",
+      "32": "assets/icon-32.png",
+      "48": "assets/icon-48.png",
+      "128": "assets/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "assets/icon-16.png",
+    "32": "assets/icon-32.png",
+    "48": "assets/icon-48.png",
+    "128": "assets/icon-128.png"
   },
   "background": {
     "service_worker": "js/background.js",
     "type": "module"
   },
-  "permissions": ["storage", "tabs", "notifications", "alarms"],
+  "permissions": ["storage", "tabs", "alarms", "declarativeNetRequest"],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "block_mmstat",
+        "enabled": true,
+        "path": "rules/block-mmstat.json"
+      }
+    ]
+  },
   "host_permissions": [
-    "http://172.30.1.151:8080/*",
-    "http://127.0.0.1:8080/*",
-    "http://localhost:8080/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*",
     "https://www.goofish.com/*",
     "https://*.alicdn.com/*",
     "https://*.taobaocdn.com/*",
     "https://*.tbcdn.cn/*",
-    "https://stream-upload.goofish.com/*",
-    "https://aldsidle.agiso.com/*"
+    "https://stream-upload.goofish.com/*"
   ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
   "content_scripts": [
     {
       "matches": ["https://www.goofish.com/*"],
@@ -30,14 +50,24 @@
       "run_at": "document_start"
     },
     {
-      "matches": ["https://aldsidle.agiso.com/*"],
-      "js": ["js/agisoContent.js"],
+      "matches": ["https://www.goofish.com/*"],
+      "js": ["js/xianyuWidget.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.goofish.com/*"],
+      "js": ["libs/msgpack.min.js", "js/xianyuPageHook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["js/xianyuPageHook.js", "libs/msgpack.min.js"],
+      "resources": [
+        "js/xianyuPageHook.js",
+        "libs/msgpack.min.js",
+        "assets/vendor/fontawesome/webfonts/*"
+      ],
       "matches": ["https://www.goofish.com/*"]
     }
   ],

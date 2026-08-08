@@ -1,388 +1,365 @@
 import type {
-  AgisoFallbackRecord,
-  AgisoStatus,
-  ApiRequest,
-  ExtensionConfig,
-  RuntimeRequest,
-  StoredAgisoFallbackRecord,
-  XianyuAccountSnapshot
-} from "./types";
+  RuntimeRequest
+} from "./handlers/types.ts";
+import { AutomationLifecycle } from "./handlers/automationLifecycle.ts";
+import { ReplyBackgroundController } from "./handlers/replyBackground.ts";
+import { TradeBackgroundController } from "./handlers/tradeBackground.ts";
 import {
-  DEFAULT_KEYWORD_REPLY_RULES,
-  DEFAULT_REPLY_TEMPLATES,
-  AUTO_REPLY_STORAGE_KEY,
-  DELIVER_SEND_IMAGE_STORAGE_KEY,
-  KEYWORD_RULE_STORAGE_KEY,
-  REPLY_TEMPLATE_STORAGE_KEY,
-  TEXT_FALLBACK_STORAGE_KEY
-} from "./replyDefaults";
+  createChromeAdjustmentSettlementJournal,
+  createChromePaidSettlementJournal,
+  createChromeTicketSettlementJournal
+} from "./handlers/settlementJournal.ts";
+import { TicketBackgroundController } from "./handlers/ticketBackground.ts";
+import {
+  createChromePluginStateRepository,
+  handleAutomationLifecycleRequest,
+  isAutomationLifecycleRequest,
+  PLUGIN_STATE_STORAGE_KEY,
+  registerAutomationLifecycleEvents,
+  type AutomationLifecycleRequest
+} from "./handlers/backgroundLifecycle.ts";
+import { decodeStoredPluginState } from "./handlers/pluginState.ts";
+import {
+  HOOK_SETTINGS_STORAGE_KEY,
+  createDefaultHookSettings,
+  decodeHookSettings,
+  type HookSettings
+} from "./handlers/hookState.ts";
+import { createBackendApiClientImpl } from "./handlers/backendApiClient.ts";
+import type { BackendApiClient, KeywordRule, ReplyTemplateKey } from "./handlers/backendApi.ts";
+import {
+  createInitialPluginState,
+  type StoredPluginState
+} from "./handlers/pluginState.ts";
+import {
+  decodeBackendConfig,
+  readBackendConfig,
+  saveBackendConfig
+} from "./upstream/backendConfig.ts";
+/** 后端地址（业务控制台保存后生效）。 */
+const backendConfigRef: { baseUrl: string } = { baseUrl: "" };
+void readBackendConfig(chrome.storage.local)
+  .then((config) => {
+    backendConfigRef.baseUrl = config.baseUrl;
+  })
+  .catch(() => {});
 
-const DEFAULT_CONFIG: ExtensionConfig = {
-  backendBaseUrl: "http://172.30.1.151:8080",
-  pluginApiToken: ""
-};
-const AGISO_TOKEN_STORAGE_KEY = "AGISO_TOKEN";
-const AGISO_TOKEN_UPDATED_AT_KEY = "AGISO_TOKEN_UPDATED_AT";
-const AGISO_LAST_REQUEST_KEY = "AGISO_LAST_REQUEST";
-const AGISO_FALLBACK_RECORDS_KEY = "AGISO_FALLBACK_RECORDS";
-const INSTALLATION_ID_STORAGE_KEY = "pluginInstallationId";
-const AGENT_STATUS_STORAGE_KEY = "pluginAgentStatus";
-const XIANYU_ACCOUNT_STORAGE_KEY = "currentXianyuAccount";
-const HEARTBEAT_ALARM = "plugin-agent-heartbeat";
-
-interface HttpRequestResult {
-  success: boolean;
-  status: number;
-  data: unknown;
-}
-
-void initializeAgentRuntime();
-chrome.runtime.onInstalled.addListener(() => void initializeAgentRuntime());
-chrome.runtime.onStartup.addListener(() => void initializeAgentRuntime());
-chrome.alarms.onAlarm.addListener((alarm: { name: string }) => {
-  if (alarm.name === HEARTBEAT_ALARM) void heartbeatAgent();
+/**
+ * 后端生产路径：插件 → FastAPI/SQLite → 良票。
+ * token 由登录链路写入插件状态；baseUrl 复用管理页保存的后端地址配置。
+ */
+const backendApiFactory = (token: string): BackendApiClient => createBackendApiClientImpl({
+  token,
+  baseUrl: () => backendConfigRef.baseUrl,
+  storage: chrome.storage.local
 });
 
-chrome.runtime.onMessage.addListener((message: RuntimeRequest, _sender: unknown, sendResponse: (value: unknown) => void) => {
+/** 读取当前登录 token 并构造 后端客户端（未登录时抛错）。 */
+async function requireBackendApi(): Promise<BackendApiClient> {
+  const state = await automationLifecycle.getState();
+  if (state.authStatus !== "AUTHENTICATED" || state.token === null) {
+    throw new Error("未登录：请先在业务控制台登录 后端");
+  }
+  return backendApiFactory(state.token);
+}
+
+const automationLifecycle = new AutomationLifecycle({
+  repository: createChromePluginStateRepository(chrome),
+  apiFactory: backendApiFactory,
+  now: () => new Date().toISOString()
+});
+const replyBackground = new ReplyBackgroundController({
+  lifecycle: automationLifecycle,
+  apiFactory: backendApiFactory
+});
+const tradeBackground = new TradeBackgroundController({
+  lifecycle: automationLifecycle,
+  apiFactory: backendApiFactory,
+  adjustmentSettlementJournal: createChromeAdjustmentSettlementJournal(chrome),
+  paidSettlementJournal: createChromePaidSettlementJournal(chrome)
+});
+const ticketBackground = new TicketBackgroundController({
+  lifecycle: automationLifecycle,
+  apiFactory: backendApiFactory,
+  journal: createChromeTicketSettlementJournal(chrome)
+});
+void ticketBackground.clearSettlementsIfUnauthenticated().catch((error) => {
+  // console.error("failed to initialize ticket settlement journal", error);
+});
+void tradeBackground.clearPaidSettlementsIfUnauthenticated().catch((error) => {
+  // console.error("failed to initialize paid settlement journal", error);
+});
+void tradeBackground.clearAdjustmentSettlementsIfUnauthenticated().catch((error) => {
+  // console.error("failed to initialize adjustment settlement journal", error);
+});
+
+chrome.storage.onChanged.addListener((changes: Record<string, unknown>, areaName: string) => {
+  if (areaName !== "local") {
+    return;
+  }
+  const change = changes[PLUGIN_STATE_STORAGE_KEY];
+  if (typeof change !== "object" || change === null || Array.isArray(change)) {
+    return;
+  }
+  const newValue = (change as Record<string, unknown>).newValue;
+  if (newValue === undefined) {
+    return;
+  }
+  let state;
+  try {
+    state = decodeStoredPluginState(newValue);
+  } catch {
+    return;
+  }
+  if (state.authStatus !== "AUTHENTICATED" || state.token === null) {
+    void ticketBackground.clearSettlements().catch((error) => {
+      // console.error("failed to clear ticket settlement journal", error);
+    });
+    void tradeBackground.clearPaidSettlements().catch((error) => {
+      // console.error("failed to clear paid settlement journal", error);
+    });
+  }
+});
+
+registerAutomationLifecycleEvents({
+  chromeApi: chrome,
+  networkEvents: {
+    addListener(listener) {
+      globalThis.addEventListener("online", listener);
+    }
+  },
+  lifecycle: automationLifecycle
+});
+
+// 本地驱动：SW 每次启动立即同步一次，确保话术/规则配置尽快就绪
+// （onInstalled/onStartup 只在安装或浏览器启动时触发，冷唤醒不触发）。
+void automationLifecycle.synchronize("STARTUP", chrome.runtime.getManifest().version)
+  .catch((error) => {
+    // console.error("failed to synchronize on startup", error);
+  });
+
+// 良票已剥离到后端:不再需要 declarativeNetRequest 注入 Origin/Referer/UA。
+// (原 installLiangPiaoHeaderRules 已删除;header 由后端服务端请求直接设置)
+
+type PopupBackendLoginRequest = {
+  type: "BACKEND_LOGIN";
+  data: { username: string; password: string };
+};
+
+chrome.runtime.onMessage.addListener((
+  message: RuntimeRequest | AutomationLifecycleRequest | PopupBackendLoginRequest,
+  _sender: unknown,
+  sendResponse: (value: unknown) => void
+) => {
   handleMessage(message).then(sendResponse).catch((error) => {
     sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) });
   });
   return true;
 });
 
-async function handleMessage(message: RuntimeRequest): Promise<unknown> {
-  if (message.type === "GET_CONFIG") {
-    return getConfig();
+async function handleMessage(
+  message: RuntimeRequest | AutomationLifecycleRequest | PopupBackendLoginRequest
+): Promise<unknown> {
+  if (message.type === "BACKEND_LOGIN") {
+    return backendLogin(message.data);
   }
-  if (message.type === "SAVE_CONFIG") {
-    await chrome.storage.local.set({
-      backendBaseUrl: requireNonEmptyString(message.data.backendBaseUrl, "backendBaseUrl"),
-      pluginApiToken: requireNonEmptyString(message.data.pluginApiToken, "pluginApiToken")
-    });
-    return activateAgent();
+  if (isAutomationLifecycleRequest(message)) {
+    const result = await handleAutomationLifecycleRequest(
+      automationLifecycle,
+      chrome.runtime.getManifest().version,
+      message
+    );
+    if (message.type === "PLUGIN_LOGOUT" || message.type === "PLUGIN_LOGIN") {
+      await ticketBackground.clearSettlements();
+      await tradeBackground.clearPaidSettlements();
+    }
+    return result;
   }
-  if (message.type === "ACTIVATE_AGENT") {
-    return activateAgent();
+  if (message.type === "GET_HOOK_SETTINGS") {
+    return getHookSettings();
   }
-  if (message.type === "GET_AGENT_STATUS") {
-    return getAgentStatus();
-  }
-  if (message.type === "REPORT_XIANYU_ACCOUNT") {
-    await chrome.storage.local.set({ [XIANYU_ACCOUNT_STORAGE_KEY]: message.data });
-    return heartbeatAgent();
+  if (message.type === "SET_HOOK_ENABLED") {
+    return setHookEnabled(message.data.enabled);
   }
   if (message.type === "GET_REPLY_CONFIG") {
-    return getReplyConfig();
+    return replyBackground.getReplyConfig();
   }
-  if (message.type === "SAVE_REPLY_CONFIG") {
-    await chrome.storage.local.set({
-      [REPLY_TEMPLATE_STORAGE_KEY]: normalizeTemplates(message.data.xianyuReplyMessageTemplates),
-      [KEYWORD_RULE_STORAGE_KEY]: normalizeKeywordRules(message.data.xianyuKeywordReplyRules),
-      [TEXT_FALLBACK_STORAGE_KEY]: requireBoolean(
-        message.data.xianyuAutoReplyTextFallback,
-        TEXT_FALLBACK_STORAGE_KEY
-      )
-    });
-    return { success: true };
+  if (message.type === "UPDATE_REPLY_CONFIG") {
+    return updateReplyConfig(message.data);
+  }
+  if (message.type === "AI_CUSTOMER_SERVICE") {
+    return replyBackground.getAiReply(message.data);
   }
   if (message.type === "GET_AUTOMATION_CONFIG") {
-    return getAutomationConfig();
+    return replyBackground.getAutomationConfig();
   }
-  if (message.type === "SAVE_AUTOMATION_CONFIG") {
-    await chrome.storage.local.set({
-      [AUTO_REPLY_STORAGE_KEY]: requireBoolean(message.data.autoReply, AUTO_REPLY_STORAGE_KEY),
-      [DELIVER_SEND_IMAGE_STORAGE_KEY]: requireBoolean(
-        message.data.xianyuDeliverSendImageEnabled,
-        DELIVER_SEND_IMAGE_STORAGE_KEY
-      )
-    });
-    return { success: true };
+  if (message.type === "QUOTE_IMAGE") {
+    return (await requireBackendApi()).quoteImage(message.data);
   }
-  if (message.type === "SET_AGISO_TOKEN") {
-    await chrome.storage.local.set({
-      [AGISO_TOKEN_STORAGE_KEY]: requireNonEmptyString(message.data.token, "Agiso token"),
-      [AGISO_TOKEN_UPDATED_AT_KEY]: new Date().toISOString()
-    });
-    return { success: true };
+  if (message.type === "LOOKUP_WAITING_PAYMENT") {
+    return tradeBackground.lookupWaitingPayment(message.data.chatId);
   }
-  if (message.type === "GET_AGISO_STATUS") {
-    return getAgisoStatus();
+  if (message.type === "BEGIN_PRICE_ADJUSTMENT") {
+    return tradeBackground.beginAdjustment(
+      message.data.businessOrderId,
+      message.data.xianyuOrderId,
+    );
   }
-  if (message.type === "RECORD_AGISO_FALLBACK") {
-    await recordAgisoFallback(message.data);
-    return { success: true };
+  if (message.type === "SETTLE_PRICE_ADJUSTMENT") {
+    return tradeBackground.settleAdjusted(message.data.request, message.data.permit);
+  }
+  if (message.type === "LOOKUP_PAID_ORDER") {
+    return tradeBackground.lookupPaidOrder(message.data.chatId);
+  }
+  if (message.type === "BEGIN_ORDER_DETAIL_READ") {
+    return tradeBackground.beginOrderDetailRead();
+  }
+  if (message.type === "COMPLETE_ORDER_DETAIL_READ") {
+    return tradeBackground.completeOrderDetailRead(message.data.permit);
+  }
+  if (message.type === "ADVANCE_PAID_ORDER") {
+    return tradeBackground.advancePaid(
+      message.data.id,
+      message.data.actualPaidAmountCents,
+    );
+  }
+  if (message.type === "BEGIN_MISMATCH_CANCELLATION") {
+    return tradeBackground.beginMismatchCancellation(message.data.id);
+  }
+  if (message.type === "COMPLETE_MISMATCH_CANCELLATION") {
+    return tradeBackground.completeMismatchCancellation(
+      message.data.request,
+      message.data.permit
+    );
+  }
+  if (message.type === "GET_TICKET_RESULTS") {
+    return ticketBackground.getTicketResults();
+  }
+  if (message.type === "BEGIN_TICKET_DELIVERY") {
+    return ticketBackground.beginDelivery(message.data.id);
+  }
+  if (message.type === "ABORT_TICKET_DELIVERY") {
+    await ticketBackground.abortDelivery(message.data.id, message.data.permit);
+    return null;
+  }
+  if (message.type === "SETTLE_TICKET_RESULT") {
+    await ticketBackground.settleTicketResult(message.data.request, message.data.permit);
+    return null;
   }
   if (message.type === "FETCH_IMAGE_DATA_URL") {
     return fetchImageDataUrl(message.data.url);
   }
-  if (message.type === "AGISO_API_REQUEST") {
-    const { AGISO_TOKEN } = await chrome.storage.local.get(AGISO_TOKEN_STORAGE_KEY);
-    if (typeof AGISO_TOKEN !== "string" || !AGISO_TOKEN) {
-      throw new Error("Agiso token is not configured");
-    }
-    const headers = { ...(message.data.headers || {}), Authorization: `Bearer ${AGISO_TOKEN}` };
-    const result = await sendRequest({ ...message.data, headers });
-    await rememberAgisoRequest(message.data, result);
-    return result;
+  if (message.type === "SAVE_BACKEND_CONFIG") {
+    const config = decodeBackendConfig(message.data.config);
+    await saveBackendConfig(chrome.storage.local, config);
+    backendConfigRef.baseUrl = config.baseUrl;
+    return { saved: true };
   }
-  if (message.type === "API_REQUEST") {
-    const config = await getConfig();
-    const installationId = await getInstallationId();
-    const headers = {
-      ...(message.data.headers || {}),
-      "X-Plugin-Token": config.pluginApiToken,
-      "X-Plugin-Installation-Id": installationId,
-      "Content-Type": "application/json"
-    };
-    return sendRequest({ ...message.data, url: absoluteBackendUrl(config.backendBaseUrl, message.data.url), headers });
+  if (message.type === "OPEN_MANAGE_PAGE") {
+    await chrome.tabs.create({ url: chrome.runtime.getURL("manage.html") });
+    return { opened: true };
   }
   throw new Error("unknown runtime message type");
 }
 
-async function getAgisoStatus(): Promise<AgisoStatus> {
-  const stored = await chrome.storage.local.get([
-    AGISO_TOKEN_STORAGE_KEY,
-    AGISO_TOKEN_UPDATED_AT_KEY,
-    AGISO_LAST_REQUEST_KEY,
-    AGISO_FALLBACK_RECORDS_KEY
-  ]);
-  const token = optionalStoredString(stored[AGISO_TOKEN_STORAGE_KEY], AGISO_TOKEN_STORAGE_KEY) ?? "";
-  const lastRequestValue = stored[AGISO_LAST_REQUEST_KEY];
-  const lastRequest = lastRequestValue === undefined
-    ? null
-    : requireRecord(lastRequestValue, "stored Agiso last request");
-  const fallbackValue = stored[AGISO_FALLBACK_RECORDS_KEY];
-  if (fallbackValue !== undefined && !Array.isArray(fallbackValue)) {
-    throw new Error("stored Agiso fallback records must be an array");
+/**
+ * 后端登录：用系统账号换取 Bearer Token 并写入插件状态。
+ * 只解析统一信封 { code, message, data, requestId }，Token 由
+ * automationLifecycle.login 校验（sync + 话术配置）后落盘。
+ */
+async function backendLogin(data: {
+  username: unknown;
+  password: unknown;
+}): Promise<StoredPluginState> {
+  const username = requireNonEmptyString(data.username, "用户名");
+  const password = requireNonEmptyString(data.password, "密码");
+  const baseUrl = backendConfigRef.baseUrl;
+  if (baseUrl.length === 0) {
+    throw new Error("尚未配置后端地址：请先打开业务控制台保存 后端地址");
   }
-  return {
-    hasToken: Boolean(token),
-    tokenPreview: maskToken(token),
-    tokenUpdatedAt: optionalStoredString(stored[AGISO_TOKEN_UPDATED_AT_KEY], AGISO_TOKEN_UPDATED_AT_KEY) ?? "",
-    lastRequestAt: lastRequest === null ? "" : requireNonEmptyString(lastRequest.at, "stored Agiso last request at"),
-    lastRequestAction: lastRequest === null ? "" : requireNonEmptyString(lastRequest.action, "stored Agiso last request action"),
-    lastRequestOk: lastRequest === null ? null : requireBoolean(lastRequest.ok, "stored Agiso last request ok"),
-    lastRequestStatus: lastRequest === null ? null : requireNumber(lastRequest.status, "stored Agiso last request status"),
-    lastRequestSummary: lastRequest === null ? "" : requireString(lastRequest.summary, "stored Agiso last request summary"),
-    fallbackRecords: fallbackValue === undefined
-      ? []
-      : (fallbackValue as unknown[]).map((record: unknown, index: number) => requireStoredFallbackRecord(record, index))
-  };
-}
-
-async function rememberAgisoRequest(request: ApiRequest, result: HttpRequestResult): Promise<void> {
-  await chrome.storage.local.set({
-    [AGISO_LAST_REQUEST_KEY]: {
-      at: new Date().toISOString(),
-      action: agisoActionName(request.url),
-      ok: result.success,
-      status: result.status,
-      summary: summarize(result.data)
-    }
+  const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password })
   });
-}
-
-async function recordAgisoFallback(record: AgisoFallbackRecord): Promise<void> {
-  const stored = await chrome.storage.local.get(AGISO_FALLBACK_RECORDS_KEY);
-  const storedRecords = stored[AGISO_FALLBACK_RECORDS_KEY];
-  if (storedRecords !== undefined && !Array.isArray(storedRecords)) {
-    throw new Error("stored Agiso fallback records must be an array");
+  const body = await readJsonResponse(response, "后端登录");
+  const envelope = requireRecord(body, "后端登录响应");
+  const message = typeof envelope.message === "string" ? envelope.message : "后端登录失败";
+  const dataValue = envelope.data;
+  if (
+    envelope.code !== 0 ||
+    !isRecord(dataValue) ||
+    typeof dataValue.accessToken !== "string" ||
+    dataValue.accessToken.length === 0
+  ) {
+    throw new Error(message);
   }
-  const records = storedRecords === undefined ? [] : storedRecords as StoredAgisoFallbackRecord[];
-  records.unshift({
-    ...record,
-    at: new Date().toISOString(),
-    request: summarize(record.request),
-    response: summarize(record.response)
-  });
-  await chrome.storage.local.set({
-    [AGISO_FALLBACK_RECORDS_KEY]: records.slice(0, 20)
-  });
+  const accessToken = requireNonEmptyString(dataValue.accessToken, "accessToken");
+  return automationLifecycle.login(accessToken, chrome.runtime.getManifest().version);
 }
 
-async function getConfig(): Promise<ExtensionConfig> {
-  const stored = await chrome.storage.local.get(["backendBaseUrl", "pluginApiToken", INSTALLATION_ID_STORAGE_KEY]);
-  return {
-    backendBaseUrl: optionalStoredString(stored.backendBaseUrl, "backendBaseUrl") ?? DEFAULT_CONFIG.backendBaseUrl,
-    pluginApiToken: optionalStoredString(stored.pluginApiToken, "pluginApiToken") ?? DEFAULT_CONFIG.pluginApiToken,
-    installationId: optionalStoredString(stored[INSTALLATION_ID_STORAGE_KEY], INSTALLATION_ID_STORAGE_KEY)
-      ?? await getInstallationId()
-  };
+/**
+ * 保存话术/关键词规则（manage 页）：PUT 后端 → 立即 sync 拉取新版本 →
+ * 返回新版本号。保存后插件本地配置即与后端一致。
+ */
+async function updateReplyConfig(data: {
+  templates: Record<string, string>;
+  keywordRules: Array<{
+    id: string;
+    keywords: string[];
+    reply: string;
+    enabled: boolean;
+    priority: number;
+  }>;
+}): Promise<{ version: number }> {
+  const api = await requireBackendApi();
+  const templates = isRecord(data.templates) ? data.templates : {};
+  const keywordRules = requireArray(data.keywordRules, "keywordRules");
+  const result = await api.updateReplyConfig(
+    templates as Record<ReplyTemplateKey, string>,
+    keywordRules as KeywordRule[],
+  );
+  // 立即同步，让本地配置跟随新版本（不等待下次事件触发）。
+  await automationLifecycle.synchronize("MANUAL", chrome.runtime.getManifest().version);
+  return result;
 }
 
-async function initializeAgentRuntime(): Promise<void> {
-  await getInstallationId();
-  chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 5 });
-  await heartbeatAgent();
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-async function getInstallationId(): Promise<string> {
-  const stored = await chrome.storage.local.get(INSTALLATION_ID_STORAGE_KEY);
-  const existing = optionalStoredString(stored[INSTALLATION_ID_STORAGE_KEY], INSTALLATION_ID_STORAGE_KEY);
-  if (existing) return existing;
-  const installationId = crypto.randomUUID();
-  await chrome.storage.local.set({ [INSTALLATION_ID_STORAGE_KEY]: installationId });
-  return installationId;
-}
-
-async function getAgentStatus(): Promise<unknown> {
-  const stored = await chrome.storage.local.get([INSTALLATION_ID_STORAGE_KEY, AGENT_STATUS_STORAGE_KEY]);
-  if (stored[AGENT_STATUS_STORAGE_KEY] !== undefined) {
-    return requireAgentRuntimeStatus(stored[AGENT_STATUS_STORAGE_KEY]);
+async function getHookSettings(): Promise<HookSettings> {
+  const stored = await chrome.storage.local.get(HOOK_SETTINGS_STORAGE_KEY);
+  const value = stored[HOOK_SETTINGS_STORAGE_KEY];
+  if (value === undefined) {
+    const settings = createDefaultHookSettings();
+    await chrome.storage.local.set({ [HOOK_SETTINGS_STORAGE_KEY]: settings });
+    return settings;
   }
-  return {
-    installationId: optionalStoredString(stored[INSTALLATION_ID_STORAGE_KEY], INSTALLATION_ID_STORAGE_KEY)
-      ?? await getInstallationId(),
-    state: "UNCONFIGURED",
-    message: "尚未激活",
-    checkedAt: ""
-  };
+  return decodeHookSettings(value);
 }
 
-async function activateAgent(): Promise<unknown> {
-  const config = await getConfig();
-  const installationId = await getInstallationId();
-  const account = await getCurrentXianyuAccount();
-  return updateAgentState("/api/v1/agents/activate", {
-    token: config.pluginApiToken,
-    agentType: "XIANYU_PLUGIN",
-    installationId,
-    instanceName: "Chrome 闲鱼插件",
-    clientVersion: chrome.runtime.getManifest().version,
-    ...(account ? {
-      currentXianyuAccountId: account.accountId,
-      ...(account.nickname === undefined ? {} : { currentXianyuNickname: account.nickname })
-    } : {})
+async function setHookEnabled(enabledValue: unknown): Promise<HookSettings> {
+  const enabled = requireBoolean(enabledValue, "hook enabled");
+  const settings = decodeHookSettings({
+    ...createDefaultHookSettings(),
+    enabled
   });
-}
-
-async function heartbeatAgent(): Promise<unknown> {
-  const config = await getConfig();
-  if (!config.pluginApiToken) return getAgentStatus();
-  const account = await getCurrentXianyuAccount();
-  return updateAgentState("/api/v1/agents/heartbeat", {
-    token: config.pluginApiToken,
-    agentType: "XIANYU_PLUGIN",
-    installationId: await getInstallationId(),
-    clientVersion: chrome.runtime.getManifest().version,
-    ...(account ? {
-      currentXianyuAccountId: account.accountId,
-      ...(account.nickname === undefined ? {} : { currentXianyuNickname: account.nickname })
-    } : {})
-  });
-}
-
-async function getCurrentXianyuAccount(): Promise<XianyuAccountSnapshot | null> {
-  const stored = await chrome.storage.local.get(XIANYU_ACCOUNT_STORAGE_KEY);
-  const value = stored[XIANYU_ACCOUNT_STORAGE_KEY];
-  if (value === undefined) return null;
-  const account = requireRecord(value, "stored Xianyu account");
-  return {
-    accountId: requireNonEmptyString(account.accountId, "stored Xianyu accountId"),
-    nickname: optionalStoredString(account.nickname, "stored Xianyu nickname"),
-    observedAt: requireNonEmptyString(account.observedAt, "stored Xianyu observedAt")
-  };
-}
-
-async function updateAgentState(path: string, body: unknown): Promise<unknown> {
-  const config = await getConfig();
-  const installationId = await getInstallationId();
-  let state: Record<string, unknown>;
+  await chrome.storage.local.set({ [HOOK_SETTINGS_STORAGE_KEY]: settings });
+  // 本地驱动：页面 hook 开关即自动工作总开关。
+  // 开启时确保本地配置就绪并启用自动化；关闭时停用。
   try {
-    const response = await fetch(absoluteBackendUrl(config.backendBaseUrl, path), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    const payload = await readJsonResponse(response, "agent activation");
-    const envelope = requireBackendEnvelope(payload, "agent activation");
-    if (!response.ok && envelope.success) {
-      throw new Error(`agent activation protocol mismatch for HTTP ${response.status}`);
+    if (enabled) {
+      const state = await automationLifecycle.getState();
+      if (state.replyConfig === null || state.replyConfig.version !== state.replyConfigVersion) {
+        await automationLifecycle.synchronize("MANUAL", chrome.runtime.getManifest().version);
+      }
     }
-    if (response.ok && !envelope.success) {
-      throw new Error(envelope.message);
-    }
-    if (!response.ok) {
-      throw new Error(envelope.message);
-    }
-    state = {
-      installationId,
-      state: "ACTIVE",
-      message: "客户端已激活",
-      checkedAt: new Date().toISOString()
-    };
-  } catch (error) {
-    state = {
-      installationId,
-      state: "ERROR",
-      message: error instanceof Error ? error.message : String(error),
-      checkedAt: new Date().toISOString()
-    };
+    await automationLifecycle.setAutomation(enabled);
+  } catch {
+    // 状态写入失败不阻塞 hook 开关本身，下次开启自动重试。
   }
-  await chrome.storage.local.set({ [AGENT_STATUS_STORAGE_KEY]: state });
-  return state;
-}
-
-async function getReplyConfig(): Promise<unknown> {
-  const stored = await chrome.storage.local.get([
-    REPLY_TEMPLATE_STORAGE_KEY,
-    KEYWORD_RULE_STORAGE_KEY,
-    TEXT_FALLBACK_STORAGE_KEY
-  ]);
-  const templatesValue = stored[REPLY_TEMPLATE_STORAGE_KEY];
-  const rulesValue = stored[KEYWORD_RULE_STORAGE_KEY];
-  const textFallbackValue = stored[TEXT_FALLBACK_STORAGE_KEY];
-  if (templatesValue === undefined && rulesValue === undefined && textFallbackValue === undefined) {
-    const replyConfig = {
-      [REPLY_TEMPLATE_STORAGE_KEY]: DEFAULT_REPLY_TEMPLATES,
-      [KEYWORD_RULE_STORAGE_KEY]: DEFAULT_KEYWORD_REPLY_RULES,
-      [TEXT_FALLBACK_STORAGE_KEY]: false
-    };
-    await chrome.storage.local.set(replyConfig);
-    return replyConfig;
-  }
-  if (templatesValue === undefined || rulesValue === undefined || textFallbackValue === undefined) {
-    throw new Error("stored reply config is incomplete");
-  }
-  return {
-    [REPLY_TEMPLATE_STORAGE_KEY]: normalizeTemplates(templatesValue),
-    [KEYWORD_RULE_STORAGE_KEY]: normalizeKeywordRules(rulesValue),
-    [TEXT_FALLBACK_STORAGE_KEY]: requireBoolean(textFallbackValue, TEXT_FALLBACK_STORAGE_KEY)
-  };
-}
-
-async function getAutomationConfig(): Promise<unknown> {
-  const stored = await chrome.storage.local.get([AUTO_REPLY_STORAGE_KEY, DELIVER_SEND_IMAGE_STORAGE_KEY]);
-  if (stored[AUTO_REPLY_STORAGE_KEY] === undefined && stored[DELIVER_SEND_IMAGE_STORAGE_KEY] === undefined) {
-    const initialConfig = {
-      [AUTO_REPLY_STORAGE_KEY]: true,
-      [DELIVER_SEND_IMAGE_STORAGE_KEY]: true
-    };
-    await chrome.storage.local.set(initialConfig);
-    return initialConfig;
-  }
-  if (stored[AUTO_REPLY_STORAGE_KEY] === undefined || stored[DELIVER_SEND_IMAGE_STORAGE_KEY] === undefined) {
-    throw new Error("stored automation config is incomplete");
-  }
-  const config = {
-    [AUTO_REPLY_STORAGE_KEY]: requireBoolean(stored[AUTO_REPLY_STORAGE_KEY], AUTO_REPLY_STORAGE_KEY),
-    [DELIVER_SEND_IMAGE_STORAGE_KEY]: requireBoolean(
-      stored[DELIVER_SEND_IMAGE_STORAGE_KEY],
-      DELIVER_SEND_IMAGE_STORAGE_KEY
-    )
-  };
-  return config;
-}
-
-async function sendRequest(request: ApiRequest): Promise<HttpRequestResult> {
-  const url = addParams(request.url, request.params);
-  const response = await fetch(url, {
-    method: request.method,
-    headers: request.headers || {},
-    body: request.body === undefined ? undefined : JSON.stringify(request.body)
-  });
-  const data = await readJsonResponse(response, request.url);
-  return { success: response.ok, status: response.status, data };
+  return settings;
 }
 
 async function fetchImageDataUrl(url: string): Promise<unknown> {
@@ -400,26 +377,6 @@ async function fetchImageDataUrl(url: string): Promise<unknown> {
   return { success: true, dataUrl };
 }
 
-function absoluteBackendUrl(baseUrl: string, path: string): string {
-  if (/^https?:\/\//i.test(path)) {
-    return path;
-  }
-  return `${baseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
-}
-
-function addParams(url: string, params?: ApiRequest["params"]): string {
-  if (!params) {
-    return url;
-  }
-  const parsed = new URL(url);
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined) {
-      parsed.searchParams.set(key, String(value));
-    }
-  });
-  return parsed.toString();
-}
-
 async function readJsonResponse(response: Response, context: string): Promise<unknown> {
   const text = await response.text();
   if (!text) {
@@ -432,121 +389,11 @@ async function readJsonResponse(response: Response, context: string): Promise<un
   }
 }
 
-function requireBackendEnvelope(value: unknown, context: string): { success: boolean; message: string; data: unknown } {
-  const payload = requireRecord(value, `${context} response`);
-  if (typeof payload.success !== "boolean") {
-    throw new Error(`${context} response success must be boolean`);
-  }
-  if (typeof payload.message !== "string" || !payload.message) {
-    throw new Error(`${context} response message must be a non-empty string`);
-  }
-  if (!Object.prototype.hasOwnProperty.call(payload, "data")) {
-    throw new Error(`${context} response is missing data`);
-  }
-  return { success: payload.success, message: payload.message, data: payload.data };
-}
-
 function requireRecord(value: unknown, context: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(`${context} must be a JSON object`);
   }
   return value as Record<string, unknown>;
-}
-
-function agisoActionName(url: string): string {
-  if (url.includes("/Trade/List")) {
-    return "Trade/List";
-  }
-  if (url.includes("/Trade/AdjustPrice")) {
-    return "Trade/AdjustPrice";
-  }
-  if (url.includes("/ManualSend/SendDummy")) {
-    return "ManualSend/SendDummy";
-  }
-  return url;
-}
-
-function maskToken(token: string): string {
-  if (!token) {
-    return "";
-  }
-  if (token.length <= 12) {
-    return `***(${token.length})`;
-  }
-  return `${token.slice(0, 6)}***${token.slice(-4)}(${token.length})`;
-}
-
-function summarize(value: unknown): string {
-  if (value == null) {
-    return "";
-  }
-  if (typeof value === "string") {
-    return value.slice(0, 500);
-  }
-  try {
-    return JSON.stringify(value).slice(0, 500);
-  } catch (error) {
-    throw new Error("unable to serialize diagnostic value", { cause: error });
-  }
-}
-
-function normalizeTemplates(value: unknown): Record<string, string> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("reply templates must be an object");
-  }
-  const entries = Object.entries(value as Record<string, unknown>);
-  entries.forEach(([key, template]) => requireString(template, `reply template ${key}`));
-  return Object.fromEntries(entries) as Record<string, string>;
-}
-
-function normalizeKeywordRules(value: unknown): typeof DEFAULT_KEYWORD_REPLY_RULES {
-  if (!Array.isArray(value)) {
-    throw new Error("keyword rules must be an array");
-  }
-  const list = value;
-  return list
-    .map((value, index) => {
-      const rule = requireRecord(value, `keyword rule ${index}`);
-      if (!Array.isArray(rule.keywords) || rule.keywords.length === 0) {
-        throw new Error(`keyword rule ${index} keywords must be a non-empty array`);
-      }
-      return {
-        id: optionalStoredString(rule.id, `keyword rule ${index} id`),
-        enabled: requireBoolean(rule.enabled, `keyword rule ${index} enabled`),
-        keywords: rule.keywords.map((keyword, keywordIndex) =>
-          requireNonEmptyString(keyword, `keyword rule ${index} keywords[${keywordIndex}]`)),
-        priority: requireNumber(rule.priority, `keyword rule ${index} priority`),
-        reply: requireNonEmptyString(rule.reply, `keyword rule ${index} reply`)
-      };
-    });
-}
-
-function requireAgentRuntimeStatus(value: unknown): import("./types").AgentRuntimeStatus {
-  const status = requireRecord(value, "stored agent status");
-  const state = requireNonEmptyString(status.state, "stored agent state");
-  if (state !== "UNCONFIGURED" && state !== "ACTIVE" && state !== "ERROR") {
-    throw new Error(`stored agent state is unknown: ${state}`);
-  }
-  return {
-    installationId: requireNonEmptyString(status.installationId, "stored agent installationId"),
-    state,
-    message: requireNonEmptyString(status.message, "stored agent message"),
-    checkedAt: requireString(status.checkedAt, "stored agent checkedAt")
-  };
-}
-
-function requireStoredFallbackRecord(value: unknown, index: number): StoredAgisoFallbackRecord {
-  const record = requireRecord(value, `stored Agiso fallback record ${index}`);
-  return {
-    action: requireNonEmptyString(record.action, `stored Agiso fallback record ${index} action`),
-    reason: requireNonEmptyString(record.reason, `stored Agiso fallback record ${index} reason`),
-    orderId: optionalStoredString(record.orderId, `stored Agiso fallback record ${index} orderId`),
-    tradeNo: optionalStoredString(record.tradeNo, `stored Agiso fallback record ${index} tradeNo`),
-    ok: record.ok === undefined ? undefined : requireBoolean(record.ok, `stored Agiso fallback record ${index} ok`),
-    request: record.request,
-    response: record.response,
-    at: requireNonEmptyString(record.at, `stored Agiso fallback record ${index} at`)
-  };
 }
 
 function requireString(value: unknown, context: string): string {
@@ -560,20 +407,12 @@ function requireNonEmptyString(value: unknown, context: string): string {
   return text;
 }
 
-function optionalStoredString(value: unknown, context: string): string | undefined {
-  return value === undefined || value === null ? undefined : requireString(value, context);
-}
-
 function requireBoolean(value: unknown, context: string): boolean {
   if (typeof value !== "boolean") throw new Error(`${context} must be boolean`);
   return value;
 }
 
-function optionalStoredBoolean(value: unknown, context: string): boolean | undefined {
-  return value === undefined || value === null ? undefined : requireBoolean(value, context);
-}
-
-function requireNumber(value: unknown, context: string): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`${context} must be a finite number`);
+function requireArray(value: unknown, context: string): unknown[] {
+  if (!Array.isArray(value)) throw new Error(`${context} must be an array`);
   return value;
 }

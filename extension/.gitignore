@@ -1,2 +1,27 @@
+# 依赖与构建产物
 node_modules/
 dist/
+backend/.venv/
+__pycache__/
+*.pyc
+
+# 运行时数据与日志
+backend/data/
+*.log
+backend/uvicorn.log
+backend/uvicorn.err.log
+
+# 本地环境
+.env
+.env.local
+*.local.yml
+
+# 编辑器/系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 会话快照
+.reasonix/
+.claude/
